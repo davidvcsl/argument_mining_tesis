@@ -86,24 +86,6 @@ class BiLSTM:
                            'dev': self.max_dev_score}
 
 
-    def padCharacters(self):
-        """ Pads the character representations of the words to the longest word in the dataset """
-        #Find the longest word in the dataset
-        maxCharLen = 0
-        for data in [self.dataset['trainMatrix'], self.dataset['devMatrix'], self.dataset['testMatrix']]:            
-            for sentence in data:
-                for token in sentence['characters']:
-                    maxCharLen = max(maxCharLen, len(token))
-
-        for data in [self.dataset['trainMatrix'], self.dataset['devMatrix'], self.dataset['testMatrix']]:       
-            #Pad each other word with zeros
-            for sentenceIdx in range(len(data)):
-                for tokenIdx in range(len(data[sentenceIdx]['characters'])):
-                    token = data[sentenceIdx]['characters'][tokenIdx]
-                    data[sentenceIdx]['characters'][tokenIdx] = np.pad(token, (0,maxCharLen-len(token)), 'constant')
-    
-        self.maxCharLen = maxCharLen
-
     def trainModel(self):
         if self.model == None:
             self.buildModel()        
@@ -119,7 +101,7 @@ class BiLSTM:
         
         for batch in iterator: 
             labels = batch[0]
-            nnInput = batch[1:]                
+            nnInput = batch[1:]
             self.model.train_on_batch(nnInput, labels)   
 
     def predictLabels(self, sentences):
@@ -139,7 +121,7 @@ class BiLSTM:
                 predictions = [[dummyLabel]] * len(indices) #Tag with dummy label
             else:          
                 
-                features = ['tokens', 'casing']+self.additionalFeatures                
+                features = ['tokens']+self.additionalFeatures       #SACAR ESTO?!!!!!!!!!!!!!!!
                 inputData = {name: [] for name in features}              
                 
                 for idx in indices:                    
@@ -168,7 +150,7 @@ class BiLSTM:
         
         for idx in idxRange:
                 labels = []                
-                features = ['tokens', 'casing']+self.additionalFeatures                
+                features = ['tokens']+self.additionalFeatures       #SACAR ESTO!!????
                 
                 labels = dataset[idx][labelKey]
                 labels = [labels]
@@ -223,9 +205,9 @@ class BiLSTM:
                 
                 
                 labels = []                
-                features = ['tokens', 'casing']+self.additionalFeatures                
-                inputData = {name: [] for name in features}              
-                
+                features = ['tokens']+self.additionalFeatures       #SACAR ESTO???!!
+                inputData = {name: [] for name in features}
+
                 for idx in tmpIndices:
                     labels.append(dataset[idx][labelKey])
                     
@@ -246,22 +228,15 @@ class BiLSTM:
     def buildModel(self):        
         params = self.params  
         
-        if self.params['charEmbeddings'] not in [None, "None", "none", False, "False", "false"]:
-            self.padCharacters()      
-        
         embeddings = self.embeddings
-        casing2Idx = self.dataset['mappings']['casing']
-        
-        caseMatrix = np.identity(len(casing2Idx), dtype='float32')
+
         tokens = Sequential()
         tokens.add(Embedding(input_dim=embeddings.shape[0], output_dim=embeddings.shape[1],  weights=[embeddings], trainable=False, name='token_emd'))
-        
-        casing = Sequential()
-        casing.add(Embedding(input_dim=caseMatrix.shape[0], output_dim=caseMatrix.shape[1], weights=[caseMatrix], trainable=False, name='casing_emd')) 
     
-        mergeLayersIn = [tokens.input, casing.input]
-        mergeLayersOut = [tokens.output, casing.output]
+        layerIn = tokens.input
+        layerOut = tokens.output
         
+        """
         if self.additionalFeatures != None:
             for addFeature in self.additionalFeatures:
                 maxAddFeatureValue = max([max(sentence[addFeature]) for sentence in self.dataset['trainMatrix']+self.dataset['devMatrix']+self.dataset['testMatrix']])
@@ -269,48 +244,17 @@ class BiLSTM:
                 addFeatureEmd.add(Embedding(input_dim=maxAddFeatureValue+1, output_dim=self.params['addFeatureDimensions'], trainable=True, name=addFeature+'_emd'))  
                 mergeLayersIn.append(addFeatureEmd.input)
                 mergeLayersOut.append(addFeatureEmd.output)
-                
-                
-        # :: Character Embeddings ::
-        if params['charEmbeddings'] not in [None, "None", "none", False, "False", "false"]:
-            charset = self.dataset['mappings']['characters']
-            charEmbeddingsSize = params['charEmbeddingsSize']
-            maxCharLen = self.maxCharLen
-            charEmbeddings= []
-            for _ in charset:
-                limit = math.sqrt(3.0/charEmbeddingsSize)
-                vector = np.random.uniform(-limit, limit, charEmbeddingsSize) 
-                charEmbeddings.append(vector)
-            charEmbeddings[0] = np.zeros(charEmbeddingsSize) #Zero padding
-            charEmbeddings = np.asarray(charEmbeddings)
-            chars = Sequential()
-            chars.add(TimeDistributed(Embedding(input_dim=charEmbeddings.shape[0], output_dim=charEmbeddings.shape[1],  weights=[charEmbeddings], trainable=True, mask_zero=True), input_shape=(None, maxCharLen), name='char_emd'))
-            if params['charEmbeddings'].lower() == 'lstm': #Use LSTM for char embeddings from Lample et al., 2016
-                charLSTMSize = params['charLSTMSize']
-                chars.add(TimeDistributed(Bidirectional(LSTM(charLSTMSize, return_sequences=False)), name="char_LSTM"))
-            else: #Use CNNs for character embeddings from Ma and Hovy, 2016
-                charFilterSize = params['charFilterSize']
-                charFilterLength = params['charFilterLength']
-                chars.add(TimeDistributed(Convolution1D(charFilterSize, charFilterLength, padding='same'), name="char_cnn"))
-                chars.add(TimeDistributed(GlobalMaxPooling1D(), name="char_pooling"))
-            
-            mergeLayersIn.append(chars.input)
-            mergeLayersOut.append(chars.output)
-            if self.additionalFeatures == None:
-                self.additionalFeatures = []
-            self.additionalFeatures.append('characters')
-
-        mergedLayer = Concatenate()(mergeLayersOut)
+        """
 
         # Add LSTMs
         cnt = 1
         for size in params['LSTM-Size']:
             if isinstance(params['dropout'], (list, tuple)):
-                lstmLayer = Bidirectional(LSTM(size, return_sequences=True, dropout=params['dropout'][0], recurrent_dropout=params['dropout'][1]), name="main_LSTM_"+str(cnt))(mergedLayer)
+                lstmLayer = Bidirectional(LSTM(size, return_sequences=True, dropout=params['dropout'][0], recurrent_dropout=params['dropout'][1]), name="main_LSTM_"+str(cnt))(layerOut)
             
             else:
                 """ Naive dropout """
-                lstmLayer = Bidirectional(LSTM(size, return_sequences=True), name="LSTM_"+str(cnt))(mergedLayer)
+                lstmLayer = Bidirectional(LSTM(size, return_sequences=True), name="LSTM_"+str(cnt))(layerOut)
                 
                 if params['dropout'] > 0.0:
                     lstmLayer = TimeDistributed(Dropout(params['dropout']), name="dropout_"+str(cnt))(lstmLayer)
@@ -319,19 +263,9 @@ class BiLSTM:
         
 
         # Softmax Decoder
-        if params['classifier'].lower() == 'softmax':    
+        if params['classifier'].lower() == 'softmax':    #sacar y hacer directo
             activationLayer = TimeDistributed(Dense(len(self.dataset['mappings'][self.labelKey]), activation='softmax'), name='softmax_output')(lstmLayer)
             lossFct = 'sparse_categorical_crossentropy'
-        elif params['classifier'].lower() == 'crf':
-            activationLayer = TimeDistributed(Dense(len(self.dataset['mappings'][self.labelKey]), activation=None), name='hidden_layer')(lstmLayer)
-            crf = ChainCRF()
-            activationLayer = crf(activationLayer)            
-            lossFct = crf.sparse_loss 
-        elif params['classifier'].lower() == 'tanh-crf':
-            activationLayer = TimeDistributed(Dense(len(self.dataset['mappings'][self.labelKey]), activation='tanh'), name='hidden_layer')(lstmLayer)
-            crf = ChainCRF()          
-            activationLayer = crf(activationLayer)            
-            lossFct = crf.sparse_loss 
         else:
             print("Please specify a valid classifier")
             assert(False) #Wrong classifier
@@ -355,7 +289,7 @@ class BiLSTM:
             opt = Adagrad(**optimizerParams)
         elif params['optimizer'].lower() == 'sgd':
             opt = SGD(lr=0.1, **optimizerParams)
-        model = Model(mergeLayersIn, activationLayer)
+        model = Model(layerIn, activationLayer)
         model.compile(loss=lossFct, optimizer=opt)
         
         self.model = model
@@ -379,7 +313,7 @@ class BiLSTM:
             sys.stdout.flush()           
             logging.info("--------- Epoch %d -----------" % (epoch+1))
             
-            start_time = time.time() 
+            start_time = time.time()
             self.trainModel()
             time_diff = time.time() - start_time
             total_train_time += time_diff
@@ -543,4 +477,3 @@ class BiLSTM:
             
         self.model = model        
         self.setMappings(None, mappings)
-        
