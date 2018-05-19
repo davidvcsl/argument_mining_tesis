@@ -32,10 +32,8 @@ else: #Python 2.7 imports
     import cPickle as pkl
 
 class BiLSTM:
-    additionalFeatures = []
     learning_rate_updates = {'sgd': {1: 0.1, 3:0.05, 5:0.01} } 
     verboseBuild = True
-
     model = None 
     epoch = 0 
     skipOneTokenSentences=True
@@ -49,7 +47,6 @@ class BiLSTM:
     
     params = {'miniBatchSize': 32,
               'dropout': [0.25, 0.25],
-              'classifier': 'Softmax',
               'LSTM-Size': [100],
               'optimizer': 'nadam',
               'earlyStopping': -1,
@@ -121,7 +118,7 @@ class BiLSTM:
                 predictions = [[dummyLabel]] * len(indices) #Tag with dummy label
             else:          
                 
-                features = ['tokens']+self.additionalFeatures       #SACAR ESTO?!!!!!!!!!!!!!!!
+                features = ['tokens']
                 inputData = {name: [] for name in features}              
                 
                 for idx in indices:                    
@@ -150,7 +147,7 @@ class BiLSTM:
         
         for idx in idxRange:
                 labels = []                
-                features = ['tokens']+self.additionalFeatures       #SACAR ESTO!!????
+                features = ['tokens']
                 
                 labels = dataset[idx][labelKey]
                 labels = [labels]
@@ -205,7 +202,7 @@ class BiLSTM:
                 
                 
                 labels = []                
-                features = ['tokens']+self.additionalFeatures       #SACAR ESTO???!!
+                features = ['tokens']
                 inputData = {name: [] for name in features}
 
                 for idx in tmpIndices:
@@ -235,16 +232,6 @@ class BiLSTM:
     
         layerIn = tokens.input
         layerOut = tokens.output
-        
-        """
-        if self.additionalFeatures != None:
-            for addFeature in self.additionalFeatures:
-                maxAddFeatureValue = max([max(sentence[addFeature]) for sentence in self.dataset['trainMatrix']+self.dataset['devMatrix']+self.dataset['testMatrix']])
-                addFeatureEmd = Sequential()
-                addFeatureEmd.add(Embedding(input_dim=maxAddFeatureValue+1, output_dim=self.params['addFeatureDimensions'], trainable=True, name=addFeature+'_emd'))  
-                mergeLayersIn.append(addFeatureEmd.input)
-                mergeLayersOut.append(addFeatureEmd.output)
-        """
 
         # Add LSTMs
         cnt = 1
@@ -263,12 +250,8 @@ class BiLSTM:
         
 
         # Softmax Decoder
-        if params['classifier'].lower() == 'softmax':    #sacar y hacer directo
-            activationLayer = TimeDistributed(Dense(len(self.dataset['mappings'][self.labelKey]), activation='softmax'), name='softmax_output')(lstmLayer)
-            lossFct = 'sparse_categorical_crossentropy'
-        else:
-            print("Please specify a valid classifier")
-            assert(False) #Wrong classifier
+        activationLayer = TimeDistributed(Dense(len(self.dataset['mappings'][self.labelKey]), activation='softmax'), name='softmax_output')(lstmLayer)
+        lossFct = 'sparse_categorical_crossentropy'
        
         optimizerParams = {}
         if 'clipnorm' in self.params and self.params['clipnorm'] != None and  self.params['clipnorm'] > 0:
@@ -343,7 +326,6 @@ class BiLSTM:
                         mappingsJson = json.dumps(self.mappings)
                         with h5py.File(savePath, 'a') as h5file:
                             h5file.attrs['mappings'] = mappingsJson
-                            h5file.attrs['additionalFeatures'] = json.dumps(self.additionalFeatures)
                             h5file.attrs['maxCharLen'] = str(self.maxCharLen)
                             
                         #mappingsOut = open(savePath+'.mappings', 'wb')                        
@@ -403,15 +385,6 @@ class BiLSTM:
 
 
     def tagSentences(self, sentences):
-        
-        #Pad characters
-        if 'characters' in self.additionalFeatures:       
-            maxCharLen = self.maxCharLen
-            for sentenceIdx in range(len(sentences)):
-                for tokenIdx in range(len(sentences[sentenceIdx]['characters'])):
-                    token = sentences[sentenceIdx]['characters'][tokenIdx]
-                    sentences[sentenceIdx]['characters'][tokenIdx] = np.pad(token, (0, maxCharLen-len(token)), 'constant')
-        
     
         paddedPredLabels = self.predictLabels(sentences)        
         predLabels = []
@@ -469,8 +442,6 @@ class BiLSTM:
 
         with h5py.File(modelPath, 'r') as f:
             mappings = json.loads(f.attrs['mappings'])
-            if 'additionalFeatures' in f.attrs:
-                self.additionalFeatures = json.loads(f.attrs['additionalFeatures'])
                 
             if 'maxCharLen' in f.attrs and f.attrs['maxCharLen'] != 'None':
                 self.maxCharLen = int(f.attrs['maxCharLen'])

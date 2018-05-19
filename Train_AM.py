@@ -27,10 +27,6 @@ embeddingsPathOpt = {'levy':'levy_deps.words',
                      'word2vec':'',
                     }
 op = OptionParser(usage='Usage: python Train_AM [dataset] [embedding] [opts]')
-op.add_option("--classifier",  #sacar (vamos a usar softmax siempre)
-              dest="classifier",
-              default="softmax",
-              help="softmax / tanh-crf")
 op.add_option("--optimizer",
               dest="optimizer",
               default="nadam",
@@ -60,7 +56,6 @@ embeddingsPath = embeddingsPathOpt[sys.argv[2]]
 
 #Parameters of the network
 params = {'dropout': [0.25, 0.25],
-          'classifier': opts.classifier,  #sacar (vamos a usar softmax siempre)
           'LSTM-Size': [125],
           'optimizer': opts.optimizer,
           'miniBatchSize': 32}
