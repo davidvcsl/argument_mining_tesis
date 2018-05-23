@@ -21,7 +21,6 @@ import math
 import numpy as np
 import logging
 
-from .keraslayers.ChainCRF import ChainCRF
 from util.F1Validation import compute_f1_token_basis
 
 
@@ -50,12 +49,6 @@ class BiLSTM:
               'LSTM-Size': [100],
               'optimizer': 'nadam',
               'earlyStopping': -1,
-              'addFeatureDimensions': 10,
-              'charEmbeddings': None,
-              'charEmbeddingsSize':30,
-              'charFilterSize': 30,
-              'charFilterLength':3,
-              'charLSTMSize': 25,
               'clipvalue': 0,
               'clipnorm': 1 } #Default params
 
@@ -201,7 +194,7 @@ class BiLSTM:
                 numTrainExamples += len(tmpIndices)
                 
                 
-                labels = []                
+                labels = []
                 features = ['tokens']
                 inputData = {name: [] for name in features}
 

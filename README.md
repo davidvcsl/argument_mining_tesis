@@ -1,5 +1,5 @@
 # Argument mining with BiLSTM
-Implementación de una red BiLSTM-CNN-CRF usada para Sequence Tagging. Adaptación para Argument Mining. Flexibilización de input y reporte de hiperparametros.
+Implementación de una red BiLSTM-CNN-CRF usada para Sequence Tagging [https://github.com/UKPLab/emnlp2017-bilstm-cnn-crf](https://github.com/UKPLab/emnlp2017-bilstm-cnn-crf). Adaptación para Argument Mining. Flexibilización de input y reporte de hiperparametros.
 
 ## Corpus
 El corpus fue tomado de los repositorios de UKPLab y puede encontrarse en ```/data```. El idioma utilizado es Inglés y estas son las dimensiones:
@@ -27,7 +27,7 @@ Esto creará un entorno virtual dentro de la carpeta ```.env```, instalará las 
 Se proponen 2 tipos de datasets. 
 - Uno simple con las categorias de etiquetado básico tales como **Premise**, **Claim**, **MajorClaim**, **O** sin distinguir el caso de que sea a favor o en contra en el caso de las premisas y las afirmaciones. Este dataset está disponible en ```/data/am_simplest/```. En el caso de querer reetiquetar en este formato un essay en formato CoNLL usar el script [util/tag_simplifier.py](util/tag_simplifier.py)
 
-- Otro completo con la adición de las etiquetas **:For** y **:Against** sobre las ya prpuestas. Este dataset se encuentra dentro de ```/data/am/```
+- Otro completo con la adición de las etiquetas **:For** y **:Against** sobre las ya propuestas. Este dataset se encuentra dentro de ```/data/am/```
 
 Ambos dataset estas listos y dispuestos en formato CoNLL para ser entrenados. **dev.txt, train.txt** para entrenar la red y **test.txt** para probar los resultados.
 
@@ -91,24 +91,14 @@ En caso de que se ejecute RunModel con un texto en formato CoNLL, se generará a
 
 | am_simplest 	              | f1 promedio(dev) | f1 promedio(test) | epochs model |
 |-----------------------------|------------------|-------------------|--------------|
-| crf-adam             	      | 0.71             | 0.71              | 34 epochs    |
 | softmax-nadam               | 0.72             | 0.73              | 20 epochs    |
 | softmax-sgd                 | 0.48             | 0.50           	 | 44 epochs    |
-| crf-nadam (levy)            | 0.71             | 0.70        	     | 32 epochs    |
 | softmax-nadam (glove 100d)  | 0.69             | 0.70        	     | 34 epochs    |
 | softmax-nadam-paragraph     | 0.70             | 0.72        	     | 16 epochs    |
-| softmax-nadam-paragraph(cnn)| 0.71             | 0.74        	     | 27 epochs    |
 	
 
 | am_full(levy)               | f1 promedio(dev) | f1 promedio(test) | epochs model |
 |-----------------------------|------------------|-------------------|--------------|
-| charEmbedding(lstm)-crf     | 0.46             | 0.68              | 20 epochs    |
-| charEmbedding(cnn)-crf      | 0.48             | 0.46              | 39 epochs    |
-| charEmbeddings(cnn)-softmax | 0.46             | 0.71              | 23 epochs    |
 | softmax                     | 0.44             | 0.47              | 49 epochs    |
-| softmax-paragraph(cnn)      | 0.51             | 0.56              | 28 epochs    |
 
-
-## Contexto del trabajo
-### [Presentación de materia Data Mining FaMAF 2017](AM_Project.ipynb)
 
