@@ -10,6 +10,7 @@ from __future__ import print_function
 import keras
 from keras.models import Model
 from keras.models import Sequential
+from keras.layers.core import *
 from keras.layers import *
 from keras.optimizers import *
 
@@ -45,9 +46,9 @@ class BiLSTM:
     maxCharLen = None
     
     params = {'miniBatchSize': 32,
-              'dropout': [0.25, 0.25],
+              'dropout': [0.5, 0.5],
               'LSTM-Size': [100],
-              'optimizer': 'nadam',
+              'optimizer': 'adam',
               'earlyStopping': -1,
               'clipvalue': 0,
               'clipnorm': 1 } #Default params
@@ -213,7 +214,13 @@ class BiLSTM:
                 yield [labels] + [inputData[name] for name in features]   
                 
             assert(numTrainExamples == sentenceCount) #Check that no sentence was missed 
-            
+
+    def attention_3d_block(self, inputs):
+        a = Permute((2, 1))(inputs)
+        a = Dense(None, activation='softmax')(a)
+        a_probs = Permute((2, 1), name='attention_vec')(a)
+        output_attention_mul = merge([inputs, a_probs], name='attention_mul', mode='mul')
+        return output_attention_mul
 
     def buildModel(self):        
         params = self.params  
@@ -222,7 +229,7 @@ class BiLSTM:
 
         tokens = Sequential()
         tokens.add(Embedding(input_dim=embeddings.shape[0], output_dim=embeddings.shape[1],  weights=[embeddings], trainable=False, name='token_emd'))
-    
+
         layerIn = tokens.input
         layerOut = tokens.output
 
@@ -240,10 +247,12 @@ class BiLSTM:
                     lstmLayer = TimeDistributed(Dropout(params['dropout']), name="dropout_"+str(cnt))(lstmLayer)
             
             cnt += 1
-        
+
+        attention_mul = self.attention_3d_block(lstmLayer)
+        #attention_mul = Flatten()(attention_mul)
 
         # Softmax Decoder
-        activationLayer = TimeDistributed(Dense(len(self.dataset['mappings'][self.labelKey]), activation='softmax'), name='softmax_output')(lstmLayer)
+        activationLayer = TimeDistributed(Dense(len(self.dataset['mappings'][self.labelKey]), activation='softmax'), name='softmax_output')(attention_mul)
         lossFct = 'sparse_categorical_crossentropy'
        
         optimizerParams = {}

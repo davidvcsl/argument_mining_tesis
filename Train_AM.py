@@ -21,6 +21,7 @@ ch.setLevel(loggingLevel)
 formatter = logging.Formatter('%(message)s')
 ch.setFormatter(formatter)
 logger.addHandler(ch)
+
 embeddingsPathOpt = {'levy':'levy_deps.words',
                      'glove':'glove.6B.300d.txt',
                      'glove100':'glove.6B.100d.txt',
@@ -40,6 +41,7 @@ if len(sys.argv) < 3:
     print(args)
     print("Usage: python Train_AM [dataset] [embedding] [opts]")
     exit()
+
 ######################################################
 #
 # Data preprocessing
@@ -56,7 +58,7 @@ embeddingsPath = embeddingsPathOpt[sys.argv[2]]
 
 #Parameters of the network
 params = {'dropout': [0.25, 0.25],
-          'LSTM-Size': [125],
+          'LSTM-Size': [100],
           'optimizer': opts.optimizer,
           'miniBatchSize': 32}
 
