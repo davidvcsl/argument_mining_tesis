@@ -215,11 +215,13 @@ class BiLSTM:
                 
             assert(numTrainExamples == sentenceCount) #Check that no sentence was missed 
 
-    def attention_3d_block(self, inputs):
-        a = Permute((2, 1))(inputs)
-        a = Dense(None, activation='softmax')(a)
-        a_probs = Permute((2, 1), name='attention_vec')(a)
-        output_attention_mul = merge([inputs, a_probs], name='attention_mul', mode='mul')
+    def attention_3d_block(self, inputs, size):
+        #a = Permute((2, 1))(inputs)
+        a = TimeDistributed(Dense(size, activation='softmax'), name='attention_dense')(inputs) #(a)
+        #a_probs = Permute((2, 1), name='attention_vec')(a)
+        #output_attention_mul = merge([inputs, a], name='attention_mul', mode='mul') #a_probs
+        output_attention_mul = multiply([inputs,a], name='attention_mul')
+        #asd = Multiply()([inputs, a])
         return output_attention_mul
 
     def buildModel(self):        
@@ -233,11 +235,13 @@ class BiLSTM:
         layerIn = tokens.input
         layerOut = tokens.output
 
+        #attention_mul = self.attention_3d_block(layerOut, int(layerOut.shape[2]))
+
         # Add LSTMs
         cnt = 1
         for size in params['LSTM-Size']:
             if isinstance(params['dropout'], (list, tuple)):
-                lstmLayer = Bidirectional(LSTM(size, return_sequences=True, dropout=params['dropout'][0], recurrent_dropout=params['dropout'][1]), name="main_LSTM_"+str(cnt))(layerOut)
+                lstmLayer = Bidirectional(LSTM(size, return_sequences=True, dropout=params['dropout'][0], recurrent_dropout=params['dropout'][1]), name="main_LSTM_"+str(cnt))(layerOut) #layerOut #attention_mul
             
             else:
                 """ Naive dropout """
@@ -248,11 +252,11 @@ class BiLSTM:
             
             cnt += 1
 
-        attention_mul = self.attention_3d_block(lstmLayer)
+        attention_mul = self.attention_3d_block(lstmLayer, int(lstmLayer.shape[2]))
         #attention_mul = Flatten()(attention_mul)
 
         # Softmax Decoder
-        activationLayer = TimeDistributed(Dense(len(self.dataset['mappings'][self.labelKey]), activation='softmax'), name='softmax_output')(attention_mul)
+        activationLayer = TimeDistributed(Dense(len(self.dataset['mappings'][self.labelKey]), activation='softmax'), name='softmax_output')(attention_mul) #attention_mul #lstmLayer
         lossFct = 'sparse_categorical_crossentropy'
        
         optimizerParams = {}
