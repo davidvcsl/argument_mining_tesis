@@ -215,11 +215,16 @@ class BiLSTM:
                 
             assert(numTrainExamples == sentenceCount) #Check that no sentence was missed 
 
-    def attention_3d_block(self, inputs, size):
+    def attention_3d_block(self, inputs, size, mean_attention_vector=False):
         #a = Permute((2, 1))(inputs)
-        a = TimeDistributed(Dense(size, activation='softmax'), name='attention_dense')(inputs) #(a)
+        #size = K.int_shape(inputs)[-1]
+        a = TimeDistributed(Dense(size, activation=None), name='attention_dense')(inputs) #(a) , softmax
         #a_probs = Permute((2, 1), name='attention_vec')(a)
         #output_attention_mul = merge([inputs, a], name='attention_mul', mode='mul') #a_probs
+        if mean_attention_vector:
+            a = Lambda(lambda x: K.mean(x, axis=2), name='dim_reduction')(a)
+            a = RepeatVector(size)(a)
+            a = Permute((2, 1))(a)
         output_attention_mul = multiply([inputs,a], name='attention_mul')
         #asd = Multiply()([inputs, a])
         return output_attention_mul
@@ -252,7 +257,7 @@ class BiLSTM:
             
             cnt += 1
 
-        attention_mul = self.attention_3d_block(lstmLayer, int(lstmLayer.shape[2]))
+        attention_mul = self.attention_3d_block(lstmLayer, int(lstmLayer.shape[2]), True)
         #attention_mul = Flatten()(attention_mul)
 
         # Softmax Decoder
