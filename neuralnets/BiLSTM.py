@@ -13,6 +13,7 @@ from keras.models import Sequential
 from keras.layers.core import *
 from keras.layers import *
 from keras.optimizers import *
+from keras.preprocessing.sequence import pad_sequences
 
 import os
 import sys
@@ -87,12 +88,16 @@ class BiLSTM:
         if self.params['optimizer'] in self.learning_rate_updates and self.epoch in self.learning_rate_updates[self.params['optimizer']]:
             K.set_value(self.model.optimizer.lr, self.learning_rate_updates[self.params['optimizer']][self.epoch])
             logging.info("Update Learning Rate to %f" % (K.get_value(self.model.optimizer.lr)))
-        
-        iterator = self.online_iterate_dataset(trainMatrix, self.labelKey) if self.params['miniBatchSize'] == 1 else self.batch_iterate_dataset(trainMatrix, self.labelKey)
+
+        iterator = self.online_iterate_dataset(trainMatrix, self.labelKey) if self.params['miniBatchSize'] == 1 else self.batch_iterate_padded_dataset(trainMatrix, self.labelKey)
         
         for batch in iterator: 
             labels = batch[0]
             nnInput = batch[1:]
+            #logging.info(labels)
+            #logging.info("ALALLLALALALALALLALALALALALAL")
+            #logging.info(nnInput)
+            #logging.info("LELELELEL")
             self.model.train_on_batch(nnInput, labels)   
 
     def predictLabels(self, sentences):
@@ -157,32 +162,91 @@ class BiLSTM:
             
             
     def getSentenceLengths(self, sentences):
+        #METER ACA MECANISMO DE OBTENER LA SENTENCIA MAS LARGA Y METERLAS AL RESTO (PADEADAS A ESE LARGO) EN EL MISMO INDICE
+        sentencesTokens = []
         sentenceLengths = {}
         for idx in range(len(sentences)):
             sentence = sentences[idx]['tokens']
+            sentencesTokens.append(sentence)
             if len(sentence) not in sentenceLengths:
                 sentenceLengths[len(sentence)] = []
             sentenceLengths[len(sentence)].append(idx)
         
         return sentenceLengths
-            
-    
-    trainSentenceLengths = None
-    trainSentenceLengthsKeys = None        
+
+    def getPaddedSentences(self, sentences, labelKey):
+        sentencesTokens = []
+        sentencesLabelKeys = []
+        for idx in range(len(sentences)):
+            sentence = sentences[idx]['tokens']
+            sentencesTokens.append(sentence)
+            sentenceLabelKey = sentences[idx][labelKey]
+            sentencesLabelKeys.append(sentenceLabelKey)
+        paddedSentences = pad_sequences(sentencesTokens)
+        paddedLabelKeys = pad_sequences(sentencesLabelKeys)
+
+        return paddedSentences, paddedLabelKeys
+
+    trainSentenceLengths = []
+    trainSentenceLengthsLabels = None
+    trainSentenceLengthsKeys = None
+
+    def batch_iterate_padded_dataset(self,dataset,labelKey):
+        if self.trainSentenceLengths == []:
+            self.trainSentenceLengths, self.trainSentenceLengthsLabels = self.getPaddedSentences(dataset, labelKey)
+            self.trainSentenceLengthsKeys = len(self.trainSentenceLengths)
+
+        trainSentenceLengths = self.trainSentenceLengths
+        trainSentenceLengthsKeys = self.trainSentenceLengthsKeys
+        trainSentenceLengthsLabels = self.trainSentenceLengthsLabels
+
+        sentenceIndices = [i for i in range(trainSentenceLengthsKeys)]
+        random.shuffle(sentenceIndices)  # Para que?
+        sentenceCount = len(sentenceIndices)
+
+        bins = int(math.ceil(sentenceCount / float(self.params['miniBatchSize'])))
+        binSize = int(math.ceil(sentenceCount / float(bins)))
+
+        numTrainExamples = 0
+        for binNr in range(bins):
+            tmpIndices = sentenceIndices[binNr * binSize:(binNr + 1) * binSize]
+            numTrainExamples += len(tmpIndices)
+
+            labels = []
+            features = ['tokens']
+            inputData = {name: [] for name in features}
+
+            for idx in tmpIndices:
+                labels.append(trainSentenceLengthsLabels[idx]) #TAMBIEN TENGO QUE PADEAR LOS LABELKEYS PORQUE SE SUPONE QUE SU TAMAÑO COINCIDE CON EL TAMAÑO DE TOKENS DE LA SENTENCIA
+
+                for name in features:
+                    inputData[name].append(trainSentenceLengths[idx])
+
+            labels = np.asarray(labels)
+            labels = np.expand_dims(labels, -1)
+            for name in features:
+                inputData[name] = np.asarray(inputData[name])
+
+            yield [labels] + [inputData[name] for name in features]
+
+        assert (numTrainExamples == sentenceCount)  # Check that no sentence was missed
+
+    def caca(self):
+        return [1,2], [3]
+
     def batch_iterate_dataset(self, dataset, labelKey):       
         if self.trainSentenceLengths == None:
             self.trainSentenceLengths = self.getSentenceLengths(dataset)
             self.trainSentenceLengthsKeys = list(self.trainSentenceLengths.keys())
-            
         trainSentenceLengths = self.trainSentenceLengths
         trainSentenceLengthsKeys = self.trainSentenceLengthsKeys
-        
-        random.shuffle(trainSentenceLengthsKeys)
+
+        random.shuffle(trainSentenceLengthsKeys) #Para que?
         for senLength in trainSentenceLengthsKeys:
             if self.skipOneTokenSentences and senLength == 1: #Skip 1 token sentences
                 continue
             sentenceIndices = trainSentenceLengths[senLength]
-            random.shuffle(sentenceIndices)
+            random.shuffle(sentenceIndices) #Para que?
             sentenceCount = len(sentenceIndices)
             
             
@@ -201,13 +265,11 @@ class BiLSTM:
 
                 for idx in tmpIndices:
                     labels.append(dataset[idx][labelKey])
-                    
                     for name in features:
-                        inputData[name].append(dataset[idx][name])                 
+                        inputData[name].append(dataset[idx][name])
                                     
                 labels = np.asarray(labels)
                 labels = np.expand_dims(labels, -1)
-                
                 for name in features:
                     inputData[name] = np.asarray(inputData[name])
                  
@@ -218,7 +280,7 @@ class BiLSTM:
     def attention_3d_block(self, inputs, size, mean_attention_vector=False):
         #a = Permute((2, 1))(inputs)
         #size = K.int_shape(inputs)[-1]
-        a = TimeDistributed(Dense(size, activation=None), name='attention_dense')(inputs) #(a) , softmax
+        a = TimeDistributed(Dense(size, activation='tanh'), name='attention_dense')(inputs) #(a) , softmax
         #a_probs = Permute((2, 1), name='attention_vec')(a)
         #output_attention_mul = merge([inputs, a], name='attention_mul', mode='mul') #a_probs
         if mean_attention_vector:
@@ -415,7 +477,10 @@ class BiLSTM:
     def computeF1(self, sentences, name, tag_id):
         correctLabels = []
         predLabels = []
-        paddedPredLabels = self.predictLabels(sentences)        
+        paddedPredLabels = self.predictLabels(sentences)
+
+        logging.info("ADSADSA")
+        logging.info([layer.output for layer in self.model.layers if layer.name == 'attention_mul'])
         
         for idx in range(len(sentences)):
             unpaddedCorrectLabels = []
