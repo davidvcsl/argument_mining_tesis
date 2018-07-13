@@ -94,10 +94,6 @@ class BiLSTM:
         for batch in iterator: 
             labels = batch[0]
             nnInput = batch[1:]
-            #logging.info(labels)
-            #logging.info("ALALLLALALALALALLALALALALALAL")
-            #logging.info(nnInput)
-            #logging.info("LELELELEL")
             self.model.train_on_batch(nnInput, labels)   
 
     def predictLabels(self, sentences):
@@ -162,12 +158,9 @@ class BiLSTM:
             
             
     def getSentenceLengths(self, sentences):
-        #METER ACA MECANISMO DE OBTENER LA SENTENCIA MAS LARGA Y METERLAS AL RESTO (PADEADAS A ESE LARGO) EN EL MISMO INDICE
-        sentencesTokens = []
         sentenceLengths = {}
         for idx in range(len(sentences)):
             sentence = sentences[idx]['tokens']
-            sentencesTokens.append(sentence)
             if len(sentence) not in sentenceLengths:
                 sentenceLengths[len(sentence)] = []
             sentenceLengths[len(sentence)].append(idx)
@@ -182,8 +175,18 @@ class BiLSTM:
             sentencesTokens.append(sentence)
             sentenceLabelKey = sentences[idx][labelKey]
             sentencesLabelKeys.append(sentenceLabelKey)
-        paddedSentences = pad_sequences(sentencesTokens)
-        paddedLabelKeys = pad_sequences(sentencesLabelKeys)
+        #logging.info(sentences[0][labelKey])
+        #logging.info("ALALALALKAKAKA")
+        paddedSentences = pad_sequences(sentencesTokens) #, value=-1)
+        paddedLabelKeys = pad_sequences(sentencesLabelKeys) #, value=-1)
+        #logging.info(paddedLabelKeys[0])
+        #logging.info("LELELELELELELELE")
+        #logging.info(sentences[0]['tokens'])
+        #logging.info("LAPEPEPEPPEPEPE")
+        #logging.info(paddedSentences[0])
+        #logging.info("JEJEJEJJEE")
+        #logging.info(sentences[0])
+        #logging.info(9 / 0)
 
         return paddedSentences, paddedLabelKeys
 
@@ -195,6 +198,7 @@ class BiLSTM:
         if self.trainSentenceLengths == []:
             self.trainSentenceLengths, self.trainSentenceLengthsLabels = self.getPaddedSentences(dataset, labelKey)
             self.trainSentenceLengthsKeys = len(self.trainSentenceLengths)
+            logging.info("1 SOLA VEZ")
 
         trainSentenceLengths = self.trainSentenceLengths
         trainSentenceLengthsKeys = self.trainSentenceLengthsKeys
@@ -217,7 +221,7 @@ class BiLSTM:
             inputData = {name: [] for name in features}
 
             for idx in tmpIndices:
-                labels.append(trainSentenceLengthsLabels[idx]) #TAMBIEN TENGO QUE PADEAR LOS LABELKEYS PORQUE SE SUPONE QUE SU TAMAÑO COINCIDE CON EL TAMAÑO DE TOKENS DE LA SENTENCIA
+                labels.append(trainSentenceLengthsLabels[idx])
 
                 for name in features:
                     inputData[name].append(trainSentenceLengths[idx])
@@ -230,9 +234,6 @@ class BiLSTM:
             yield [labels] + [inputData[name] for name in features]
 
         assert (numTrainExamples == sentenceCount)  # Check that no sentence was missed
-
-    def caca(self):
-        return [1,2], [3]
 
     def batch_iterate_dataset(self, dataset, labelKey):       
         if self.trainSentenceLengths == None:
@@ -298,9 +299,14 @@ class BiLSTM:
 
         tokens = Sequential()
         tokens.add(Embedding(input_dim=embeddings.shape[0], output_dim=embeddings.shape[1],  weights=[embeddings], trainable=False, name='token_emd'))
-
+        logging.info(embeddings)
+        logging.info("JUUJ")
+        logging.info(embeddings.shape)
+        logging.info("KEKEKEK")
         layerIn = tokens.input
         layerOut = tokens.output
+        logging.info(layerIn)
+        logging.info(layerOut.shape)
 
         #attention_mul = self.attention_3d_block(layerOut, int(layerOut.shape[2]))
 
@@ -318,6 +324,9 @@ class BiLSTM:
                     lstmLayer = TimeDistributed(Dropout(params['dropout']), name="dropout_"+str(cnt))(lstmLayer)
             
             cnt += 1
+
+        logging.info("AAAAAAAAAAAAAAAAAAAAAAA")
+        logging.info(lstmLayer.shape)
 
         attention_mul = self.attention_3d_block(lstmLayer, int(lstmLayer.shape[2]), True)
         #attention_mul = Flatten()(attention_mul)
