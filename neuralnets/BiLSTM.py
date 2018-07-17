@@ -45,6 +45,7 @@ class BiLSTM:
     resultsOut = None
     modelSavePath = None
     maxCharLen = None
+    pad_sequences = False
     
     params = {'miniBatchSize': 32,
               'dropout': [0.5, 0.5],
@@ -52,7 +53,8 @@ class BiLSTM:
               'optimizer': 'adam',
               'earlyStopping': -1,
               'clipvalue': 0,
-              'clipnorm': 1 } #Default params
+              'clipnorm': 1,
+              'pad_sequences': False} #Default params
 
 
     def __init__(self, devEqualTest=False, params=None):
@@ -79,8 +81,11 @@ class BiLSTM:
 
 
     def trainModel(self):
+        #if self.pad_sequences:
+            #asd1, asd2 = self.getPaddedSentences(dataset, labelKey)
+            #padear aca y obtener los tamaños que van a ser el batch size y el tamaño de los inputs (secuencia mas larga, )
         if self.model == None:
-            self.buildModel()        
+            self.buildModel() #pasar por parametro el batchsize y secuencia mas larga
             
         trainMatrix = self.dataset['trainMatrix'] 
         self.epoch += 1
@@ -89,8 +94,8 @@ class BiLSTM:
             K.set_value(self.model.optimizer.lr, self.learning_rate_updates[self.params['optimizer']][self.epoch])
             logging.info("Update Learning Rate to %f" % (K.get_value(self.model.optimizer.lr)))
 
-        iterator = self.online_iterate_dataset(trainMatrix, self.labelKey) if self.params['miniBatchSize'] == 1 else self.batch_iterate_padded_dataset(trainMatrix, self.labelKey)
-        
+        iterator = self.online_iterate_dataset(trainMatrix, self.labelKey) if self.params['miniBatchSize'] == 1 else self.batch_iterate_padded_dataset(trainMatrix, self.labelKey) #pasarle asd1, asd2 y otras variables obtenidas antes del for (que despues se utilizan adentro, como sentence_indices
+
         for batch in iterator: 
             labels = batch[0]
             nnInput = batch[1:]
@@ -176,15 +181,15 @@ class BiLSTM:
             sentenceLabelKey = sentences[idx][labelKey]
             sentencesLabelKeys.append(sentenceLabelKey)
         #logging.info(sentences[0][labelKey])
-        #logging.info("ALALALALKAKAKA")
+        #logging.info("CCCCCCCCCCCCCC")
         paddedSentences = pad_sequences(sentencesTokens) #, value=-1)
         paddedLabelKeys = pad_sequences(sentencesLabelKeys) #, value=-1)
         #logging.info(paddedLabelKeys[0])
-        #logging.info("LELELELELELELELE")
+        #logging.info("EEEEEEEEEEEEEE")
         #logging.info(sentences[0]['tokens'])
-        #logging.info("LAPEPEPEPPEPEPE")
+        #logging.info("AAAAAAAAAAAAA")
         #logging.info(paddedSentences[0])
-        #logging.info("JEJEJEJJEE")
+        #logging.info("DDDDDDDDDDDD")
         #logging.info(sentences[0])
         #logging.info(9 / 0)
 
@@ -198,7 +203,6 @@ class BiLSTM:
         if self.trainSentenceLengths == []:
             self.trainSentenceLengths, self.trainSentenceLengthsLabels = self.getPaddedSentences(dataset, labelKey)
             self.trainSentenceLengthsKeys = len(self.trainSentenceLengths)
-            logging.info("1 SOLA VEZ")
 
         trainSentenceLengths = self.trainSentenceLengths
         trainSentenceLengthsKeys = self.trainSentenceLengthsKeys
@@ -210,6 +214,8 @@ class BiLSTM:
 
         bins = int(math.ceil(sentenceCount / float(self.params['miniBatchSize'])))
         binSize = int(math.ceil(sentenceCount / float(bins)))
+
+        #Desacoplar hasta aca
 
         numTrainExamples = 0
         for binNr in range(bins):
@@ -297,16 +303,10 @@ class BiLSTM:
         
         embeddings = self.embeddings
 
-        tokens = Sequential()
-        tokens.add(Embedding(input_dim=embeddings.shape[0], output_dim=embeddings.shape[1],  weights=[embeddings], trainable=False, name='token_emd'))
-        logging.info(embeddings)
-        logging.info("JUUJ")
-        logging.info(embeddings.shape)
-        logging.info("KEKEKEK")
+        tokens = Sequential() #usar input_shape=(secuencia mas larga, ) y batch_size=tamaño_batches obtenido por parametros
+        tokens.add(Embedding(batch_size=32, input_shape=(557,), input_dim=embeddings.shape[0], output_dim=embeddings.shape[1],  weights=[embeddings], trainable=False, name='token_emd'))
         layerIn = tokens.input
         layerOut = tokens.output
-        logging.info(layerIn)
-        logging.info(layerOut.shape)
 
         #attention_mul = self.attention_3d_block(layerOut, int(layerOut.shape[2]))
 

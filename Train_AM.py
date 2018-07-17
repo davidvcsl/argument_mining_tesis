@@ -57,10 +57,11 @@ labelKey = 'AM_TAG'
 embeddingsPath = embeddingsPathOpt[sys.argv[2]]
 
 #Parameters of the network
-params = {'dropout': [0.25, 0.25],
+params = {'dropout': [0.25, 0.25], #Parametrizar si uso atencion antes o dps de lstm
           'LSTM-Size': [100],
           'optimizer': opts.optimizer,
-          'miniBatchSize': 32}
+          'miniBatchSize': 32,
+          'pad_sequences': True}
 
 
 frequencyThresholdUnknownTokens = 50 #If a token that is not in the pre-trained embeddings file appears at least 50 times in the train.txt, then a new embedding is generated for this word
