@@ -107,7 +107,8 @@ class BiLSTM:
             
         predLabels = [None]*len(sentences)
 
-        sentenceLengths = self.getSentenceLengths(sentences)
+        #sentenceLengths = self.getSentenceLengths(sentences)
+        sentenceLengths, sentenceLabels = self.getPaddedSentences(sentences, self.labelKey)
 
         for senLength, indices in sentenceLengths.items():
             if self.skipOneTokenSentences and senLength == 1:
@@ -137,6 +138,47 @@ class BiLSTM:
                 sentences[idx]['label'] = predictions[predIdx]
                 predIdx += 1   
         
+        return predLabels
+
+    def predictPaddedLabels(self, sentences):
+        if self.model == None:
+            self.buildModel()
+
+        predLabels = [None] * len(sentences)
+
+        sentenceLengths, sentenceLabels = self.getPaddedSentences(sentences, self.labelKey)
+        sentencesNumber= len(sentenceLengths)
+        indices = [i for i in range(sentencesNumber)]
+        senLength = len(sentenceLengths[0])
+
+        if self.skipOneTokenSentences and senLength == 1:
+            if 'O' in self.label2Idx:
+                dummyLabel = self.label2Idx['O']
+            else:
+                dummyLabel = 0
+            predictions = [[dummyLabel]] * sentencesNumber  # Tag with dummy label
+        else:
+            features = ['tokens']
+            inputData = {name: [] for name in features}
+
+
+            ##!!!!!!!!!1
+            for idx in range(indices):
+                for name in features:
+                    inputData[name].append(sentences[idx][name])
+
+            for name in features:
+                inputData[name] = np.asarray(inputData[name])
+
+            predictions = self.model.predict([inputData[name] for name in features], verbose=False)
+            predictions = predictions.argmax(axis=-1)  # Predict classes
+
+        predIdx = 0
+        for idx in indices:
+            predLabels[idx] = predictions[predIdx]
+            sentences[idx]['label'] = predictions[predIdx]
+            predIdx += 1
+
         return predLabels
     
     
@@ -212,16 +254,24 @@ class BiLSTM:
         random.shuffle(sentenceIndices)  # Para que?
         sentenceCount = len(sentenceIndices)
 
-        bins = int(math.ceil(sentenceCount / float(self.params['miniBatchSize'])))
+        bins = int(math.ceil(sentenceCount / float(self.params['miniBatchSize']))) #CALCULAR EL MAYOR DIVISOR QUE SEA MENOR QUE ???? (Cuando deja de ser "eficiente" el tamaño del batch?)
+        logging.info(sentenceCount)
+        logging.info(bins)
         binSize = int(math.ceil(sentenceCount / float(bins)))
+        logging.info(binSize)
+
+        #HARDCODEO
+        bins = 11
+        binSize = 26
 
         #Desacoplar hasta aca
 
         numTrainExamples = 0
-        for binNr in range(bins):
+        for binNr in range(bins): #OPCION DE COMPLETAR EL ULTIMO BATCH CON ARREGLOS VACIOS ES MUY MALO? QUE SE HACE SI LA CANTIDAD DE SENTENCIAS ES NUMERO PRIMO
             tmpIndices = sentenceIndices[binNr * binSize:(binNr + 1) * binSize]
             numTrainExamples += len(tmpIndices)
 
+            logging.info(len(tmpIndices))
             labels = []
             features = ['tokens']
             inputData = {name: [] for name in features}
@@ -304,7 +354,7 @@ class BiLSTM:
         embeddings = self.embeddings
 
         tokens = Sequential() #usar input_shape=(secuencia mas larga, ) y batch_size=tamaño_batches obtenido por parametros
-        tokens.add(Embedding(batch_size=32, input_shape=(557,), input_dim=embeddings.shape[0], output_dim=embeddings.shape[1],  weights=[embeddings], trainable=False, name='token_emd'))
+        tokens.add(Embedding(batch_size=26, input_shape=(557,), input_dim=embeddings.shape[0], output_dim=embeddings.shape[1],  weights=[embeddings], trainable=False, name='token_emd'))
         layerIn = tokens.input
         layerOut = tokens.output
 
@@ -324,9 +374,6 @@ class BiLSTM:
                     lstmLayer = TimeDistributed(Dropout(params['dropout']), name="dropout_"+str(cnt))(lstmLayer)
             
             cnt += 1
-
-        logging.info("AAAAAAAAAAAAAAAAAAAAAAA")
-        logging.info(lstmLayer.shape)
 
         attention_mul = self.attention_3d_block(lstmLayer, int(lstmLayer.shape[2]), True)
         #attention_mul = Flatten()(attention_mul)
@@ -439,7 +486,7 @@ class BiLSTM:
         logging.info("Dev-Data metrics:")
         dev_f1s = 0
         for tag in self.label2Idx.keys():
-            dev_pre, dev_rec, dev_f1, dev_tags = self.computeF1(devMatrix, 'dev', self.label2Idx[tag])
+            dev_pre, dev_rec, dev_f1, dev_tags = self.computeF1(devMatrix, 'dev', self.label2Idx[tag]) ##VER ACA
             logging.info("[%s]: Prec: %.3f, Rec: %.3f, F1: %.4f" % (tag, dev_pre, dev_rec, dev_f1))
             dev_f1s += dev_f1
 
@@ -450,7 +497,7 @@ class BiLSTM:
             logging.info("Test-Data metrics:")
             test_f1s = 0
             for tag in self.label2Idx.keys():
-                test_pre, test_rec, test_f1 , test_tags = self.computeF1(testMatrix, 'test', self.label2Idx[tag])
+                test_pre, test_rec, test_f1 , test_tags = self.computeF1(testMatrix, 'test', self.label2Idx[tag]) ##Y ACA
                 logging.info("[%s]: Prec: %.3f, Rec: %.3f, F1: %.4f" % (tag, test_pre, test_rec, test_f1))
                 test_f1s += test_f1
             test_f1 = test_f1s / float(len(self.label2Idx))
@@ -483,18 +530,19 @@ class BiLSTM:
         
         return labels
     
-    def computeF1(self, sentences, name, tag_id):
+    def computeF1(self, sentences, name, tag_id): ##REFACTORIZAR TOD0 ESTO (VER QUE VIENE EN SENTENCES)
         correctLabels = []
         predLabels = []
-        paddedPredLabels = self.predictLabels(sentences)
+        #paddedPredLabels = self.predictLabels(sentences)
+        paddedPredLabels = self.predictPaddedLabels(sentences)
 
-        logging.info("ADSADSA")
-        logging.info([layer.output for layer in self.model.layers if layer.name == 'attention_mul'])
+        #logging.info("ADSADSA")
+        #logging.info([layer.output for layer in self.model.layers if layer.name == 'attention_mul'])
         
         for idx in range(len(sentences)):
             unpaddedCorrectLabels = []
             unpaddedPredLabels = []
-            for tokenIdx in range(len(sentences[idx]['tokens'])):
+            for tokenIdx in range(len(sentences[idx]['tokens'])): #!!!!!!!!!!!!1
                 if sentences[idx]['tokens'][tokenIdx] != 0: #Skip padding tokens 
                     unpaddedCorrectLabels.append(sentences[idx][self.labelKey][tokenIdx])
                     unpaddedPredLabels.append(paddedPredLabels[idx][tokenIdx])
