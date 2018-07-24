@@ -107,8 +107,7 @@ class BiLSTM:
             
         predLabels = [None]*len(sentences)
 
-        #sentenceLengths = self.getSentenceLengths(sentences)
-        sentenceLengths, sentenceLabels = self.getPaddedSentences(sentences, self.labelKey)
+        sentenceLengths = self.getSentenceLengths(sentences)
 
         for senLength, indices in sentenceLengths.items():
             if self.skipOneTokenSentences and senLength == 1:
@@ -142,44 +141,30 @@ class BiLSTM:
 
     def predictPaddedLabels(self, sentences):
         if self.model == None:
+            logging.info("SAKSDAKSADKKSADKSADKSDAKSDAKDSAKSADKSADKDASKDSAKASDKASDKSADKDSAKKSADK")
             self.buildModel()
 
-        predLabels = [None] * len(sentences)
+        sentencesNumber= len(sentences)
 
-        sentenceLengths, sentenceLabels = self.getPaddedSentences(sentences, self.labelKey)
-        sentencesNumber= len(sentenceLengths)
-        indices = [i for i in range(sentencesNumber)]
-        senLength = len(sentenceLengths[0])
+        sentencesPaddedTokens, sentenceLabels = self.getPaddedSentences(sentences, self.labelKey)
 
-        if self.skipOneTokenSentences and senLength == 1:
-            if 'O' in self.label2Idx:
-                dummyLabel = self.label2Idx['O']
-            else:
-                dummyLabel = 0
-            predictions = [[dummyLabel]] * sentencesNumber  # Tag with dummy label
-        else:
-            features = ['tokens']
-            inputData = {name: [] for name in features}
+        features = ['tokens']
+        inputData = {name: [] for name in features}
 
-
-            ##!!!!!!!!!1
-            for idx in range(indices):
-                for name in features:
-                    inputData[name].append(sentences[idx][name])
-
+        for idx in range(sentencesNumber):
             for name in features:
-                inputData[name] = np.asarray(inputData[name])
+                inputData[name].append(sentencesPaddedTokens[idx])
 
-            predictions = self.model.predict([inputData[name] for name in features], verbose=False)
-            predictions = predictions.argmax(axis=-1)  # Predict classes
+        for name in features:
+            inputData[name] = np.asarray(inputData[name])
 
-        predIdx = 0
-        for idx in indices:
-            predLabels[idx] = predictions[predIdx]
-            sentences[idx]['label'] = predictions[predIdx]
-            predIdx += 1
+        predictions = self.model.predict([inputData[name] for name in features], verbose=False)
+        predictions = predictions.argmax(axis=-1)  # Predict classes
 
-        return predLabels
+        for idx in range(sentencesNumber):
+            sentences[idx]['label'] = predictions[idx]
+
+        return predictions
     
     
     # ------------ Some help functions to train on sentences -----------
@@ -224,7 +209,7 @@ class BiLSTM:
             sentencesLabelKeys.append(sentenceLabelKey)
         #logging.info(sentences[0][labelKey])
         #logging.info("CCCCCCCCCCCCCC")
-        paddedSentences = pad_sequences(sentencesTokens) #, value=-1)
+        paddedSentences = pad_sequences(sentencesTokens, maxlen=557)
         paddedLabelKeys = pad_sequences(sentencesLabelKeys) #, value=-1)
         #logging.info(paddedLabelKeys[0])
         #logging.info("EEEEEEEEEEEEEE")
@@ -254,20 +239,13 @@ class BiLSTM:
         random.shuffle(sentenceIndices)  # Para que?
         sentenceCount = len(sentenceIndices)
 
-        bins = int(math.ceil(sentenceCount / float(self.params['miniBatchSize']))) #CALCULAR EL MAYOR DIVISOR QUE SEA MENOR QUE ???? (Cuando deja de ser "eficiente" el tamaño del batch?)
-        logging.info(sentenceCount)
-        logging.info(bins)
+        bins = int(math.ceil(sentenceCount / float(self.params['miniBatchSize'])))
         binSize = int(math.ceil(sentenceCount / float(bins)))
-        logging.info(binSize)
-
-        #HARDCODEO
-        bins = 11
-        binSize = 26
 
         #Desacoplar hasta aca
 
         numTrainExamples = 0
-        for binNr in range(bins): #OPCION DE COMPLETAR EL ULTIMO BATCH CON ARREGLOS VACIOS ES MUY MALO? QUE SE HACE SI LA CANTIDAD DE SENTENCIAS ES NUMERO PRIMO
+        for binNr in range(bins):
             tmpIndices = sentenceIndices[binNr * binSize:(binNr + 1) * binSize]
             numTrainExamples += len(tmpIndices)
 
@@ -353,8 +331,8 @@ class BiLSTM:
         
         embeddings = self.embeddings
 
-        tokens = Sequential() #usar input_shape=(secuencia mas larga, ) y batch_size=tamaño_batches obtenido por parametros
-        tokens.add(Embedding(batch_size=26, input_shape=(557,), input_dim=embeddings.shape[0], output_dim=embeddings.shape[1],  weights=[embeddings], trainable=False, name='token_emd'))
+        tokens = Sequential()
+        tokens.add(Embedding(input_shape=(557,), input_dim=embeddings.shape[0], output_dim=embeddings.shape[1],  weights=[embeddings], trainable=False, name='token_emd'))
         layerIn = tokens.input
         layerOut = tokens.output
 
