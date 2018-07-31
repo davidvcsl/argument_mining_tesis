@@ -141,7 +141,7 @@ class BiLSTM:
 
     def predictPaddedLabels(self, sentences):
         if self.model == None:
-            logging.info("SAKSDAKSADKKSADKSADKSDAKSDAKDSAKSADKSADKDASKDSAKASDKASDKSADKDSAKKSADK")
+            logging.info("AAAAA")
             self.buildModel()
 
         sentencesNumber= len(sentences)
@@ -210,7 +210,7 @@ class BiLSTM:
         #logging.info(sentences[0][labelKey])
         #logging.info("CCCCCCCCCCCCCC")
         paddedSentences = pad_sequences(sentencesTokens, maxlen=557)
-        paddedLabelKeys = pad_sequences(sentencesLabelKeys) #, value=-1)
+        paddedLabelKeys = pad_sequences(sentencesLabelKeys, maxlen=557) #, value=-1)
         #logging.info(paddedLabelKeys[0])
         #logging.info("EEEEEEEEEEEEEE")
         #logging.info(sentences[0]['tokens'])
@@ -249,7 +249,6 @@ class BiLSTM:
             tmpIndices = sentenceIndices[binNr * binSize:(binNr + 1) * binSize]
             numTrainExamples += len(tmpIndices)
 
-            logging.info(len(tmpIndices))
             labels = []
             features = ['tokens']
             inputData = {name: [] for name in features}
@@ -269,11 +268,21 @@ class BiLSTM:
 
         assert (numTrainExamples == sentenceCount)  # Check that no sentence was missed
 
+
+    #trainSentenceLengths = None
+    #trainSentenceLengthsLabels = None
+    #trainSentenceLengthsKeys = None
+
     def batch_iterate_dataset(self, dataset, labelKey):       
         if self.trainSentenceLengths == None:
             self.trainSentenceLengths = self.getSentenceLengths(dataset)
             self.trainSentenceLengthsKeys = list(self.trainSentenceLengths.keys())
         trainSentenceLengths = self.trainSentenceLengths
+        #keylist = trainSentenceLengths.keys()
+        #for key in sorted(keylist):
+        #    logging.info(key)
+        #    logging.info(len(trainSentenceLengths[key]))
+        #logging.info(trainSentenceLengths)
         trainSentenceLengthsKeys = self.trainSentenceLengthsKeys
 
         random.shuffle(trainSentenceLengthsKeys) #Para que?
@@ -313,15 +322,19 @@ class BiLSTM:
             assert(numTrainExamples == sentenceCount) #Check that no sentence was missed 
 
     def attention_3d_block(self, inputs, size, mean_attention_vector=False):
-        #a = Permute((2, 1))(inputs)
+        a = Permute((2, 1))(inputs)
         #size = K.int_shape(inputs)[-1]
-        a = TimeDistributed(Dense(size, activation='tanh'), name='attention_dense')(inputs) #(a) , softmax
+        a = TimeDistributed(Dense(557, activation='tanh'), name='attention_dense')(a) #(inputs) , softmax , size=TIME_STEPS
+        logging.info(a.shape) #(?, 200, 557)
         #a_probs = Permute((2, 1), name='attention_vec')(a)
         #output_attention_mul = merge([inputs, a], name='attention_mul', mode='mul') #a_probs
         if mean_attention_vector:
-            a = Lambda(lambda x: K.mean(x, axis=2), name='dim_reduction')(a)
+            a = Lambda(lambda x: K.mean(x, axis=1), name='dim_reduction')(a)
+            logging.info(a.shape) #(?, 557)
             a = RepeatVector(size)(a)
+            logging.info(a.shape) #(?, 200, 557)
             a = Permute((2, 1))(a)
+            logging.info(a.shape) #(?, 557, 200)
         output_attention_mul = multiply([inputs,a], name='attention_mul')
         #asd = Multiply()([inputs, a])
         return output_attention_mul
@@ -332,9 +345,13 @@ class BiLSTM:
         embeddings = self.embeddings
 
         tokens = Sequential()
-        tokens.add(Embedding(input_shape=(557,), input_dim=embeddings.shape[0], output_dim=embeddings.shape[1],  weights=[embeddings], trainable=False, name='token_emd'))
+        tokens.add(Embedding(input_length=557, input_dim=embeddings.shape[0], output_dim=embeddings.shape[1],  weights=[embeddings], trainable=False, name='token_emd')) #input_shape=(557,)
         layerIn = tokens.input
         layerOut = tokens.output
+        logging.info(embeddings.shape[0]) #400002
+        logging.info(embeddings.shape[1]) #300
+        logging.info(layerIn.shape) #(?,557)
+        logging.info(layerOut.shape) #(?,557,300)
 
         #attention_mul = self.attention_3d_block(layerOut, int(layerOut.shape[2]))
 
@@ -352,6 +369,8 @@ class BiLSTM:
                     lstmLayer = TimeDistributed(Dropout(params['dropout']), name="dropout_"+str(cnt))(lstmLayer)
             
             cnt += 1
+
+        logging.info(lstmLayer.shape) #(?, ?, size*2 = 200)
 
         attention_mul = self.attention_3d_block(lstmLayer, int(lstmLayer.shape[2]), True)
         #attention_mul = Flatten()(attention_mul)
@@ -516,13 +535,15 @@ class BiLSTM:
 
         #logging.info("ADSADSA")
         #logging.info([layer.output for layer in self.model.layers if layer.name == 'attention_mul'])
-        
+
+        padded_tokens, padded_labels = self.getPaddedSentences(sentences, self.labelKey)
         for idx in range(len(sentences)):
             unpaddedCorrectLabels = []
             unpaddedPredLabels = []
-            for tokenIdx in range(len(sentences[idx]['tokens'])): #!!!!!!!!!!!!1
-                if sentences[idx]['tokens'][tokenIdx] != 0: #Skip padding tokens 
-                    unpaddedCorrectLabels.append(sentences[idx][self.labelKey][tokenIdx])
+
+            for tokenIdx in range(557): #!!!!!!!!!!!!1 len(sentences[idx]['tokens'])
+                if padded_tokens[idx][tokenIdx] != 0: #Skip padding tokens
+                    unpaddedCorrectLabels.append(padded_labels[idx][tokenIdx])
                     unpaddedPredLabels.append(paddedPredLabels[idx][tokenIdx])
             correctLabels.append(unpaddedCorrectLabels)
             predLabels.append(unpaddedPredLabels)
