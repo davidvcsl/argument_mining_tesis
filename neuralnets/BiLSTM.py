@@ -107,7 +107,7 @@ class BiLSTM:
             
         predLabels = [None]*len(sentences)
 
-        sentenceLengths = self.getSentenceLengths(sentences)
+        sentenceLengths = self.getSentenceLengths(sentences) ##### PARA QUE LAS VUELVE A AGRUPAR?
 
         for senLength, indices in sentenceLengths.items():
             if self.skipOneTokenSentences and senLength == 1:
@@ -141,11 +141,10 @@ class BiLSTM:
 
     def predictPaddedLabels(self, sentences):
         if self.model == None:
-            logging.info("AAAAA")
             self.buildModel()
 
         sentencesNumber= len(sentences)
-
+        att_scores = [None] * len(sentences)
         sentencesPaddedTokens, sentenceLabels = self.getPaddedSentences(sentences, self.labelKey)
 
         features = ['tokens']
@@ -158,14 +157,30 @@ class BiLSTM:
         for name in features:
             inputData[name] = np.asarray(inputData[name])
 
-        predictions = self.model.predict([inputData[name] for name in features], verbose=False)
+        ##attention, predictions = self.model.predict([inputData[name] for name in features], verbose=False)
+        attention, predictions = self.label_and_attention([inputData[name] for name in features])
         predictions = predictions.argmax(axis=-1)  # Predict classes
 
         for idx in range(sentencesNumber):
             sentences[idx]['label'] = predictions[idx]
+            att_scores[idx] = attention[idx, :]
 
-        return predictions
-    
+        return predictions, np.asarray(att_scores)
+
+    def label_and_attention(self, input_):
+        """Classifies the sequences in input_ and returns the attention score.
+        Args:
+            model: a Keras model
+            input_: a list of array representation of sentences.
+        Returns:
+            A tuple where the first element is the attention scores for each
+            sentence, and the second is the model predictions.
+        """
+        layer = self.model.get_layer('dim_reduction')
+        attention_model = Model(
+            inputs=self.model.input, outputs=[layer.output, self.model.output])
+        # The attention output is (batch_size, timesteps, features)
+        return attention_model.predict(input_)
     
     # ------------ Some help functions to train on sentences -----------
     def online_iterate_dataset(self, dataset, labelKey): 
@@ -209,8 +224,8 @@ class BiLSTM:
             sentencesLabelKeys.append(sentenceLabelKey)
         #logging.info(sentences[0][labelKey])
         #logging.info("CCCCCCCCCCCCCC")
-        paddedSentences = pad_sequences(sentencesTokens, maxlen=557)
-        paddedLabelKeys = pad_sequences(sentencesLabelKeys, maxlen=557) #, value=-1)
+        paddedSentences = pad_sequences(sentencesTokens, padding='post', maxlen=557)
+        paddedLabelKeys = pad_sequences(sentencesLabelKeys, padding='post', maxlen=557) #, value=-1)
         #logging.info(paddedLabelKeys[0])
         #logging.info("EEEEEEEEEEEEEE")
         #logging.info(sentences[0]['tokens'])
@@ -322,7 +337,15 @@ class BiLSTM:
             assert(numTrainExamples == sentenceCount) #Check that no sentence was missed 
 
     def attention_3d_block(self, inputs, size, mean_attention_vector=False):
+        logging.info("KEKEKKEASKDSOKDSAKDOSAKDKSAOKDSAO")
+        logging.info(keras.backend.int_shape(inputs))
+        #inputs = Reshape((557, 200))(inputs)
+        logging.info(keras.backend.int_shape(inputs)[-1])
+        logging.info("POPOPPOPOPOOPPOPOPOPOPOPOPOPOPO")
+
         a = Permute((2, 1))(inputs)
+
+
         #size = K.int_shape(inputs)[-1]
         a = TimeDistributed(Dense(557, activation='tanh'), name='attention_dense')(a) #(inputs) , softmax , size=TIME_STEPS
         logging.info(a.shape) #(?, 200, 557)
@@ -483,7 +506,7 @@ class BiLSTM:
         logging.info("Dev-Data metrics:")
         dev_f1s = 0
         for tag in self.label2Idx.keys():
-            dev_pre, dev_rec, dev_f1, dev_tags = self.computeF1(devMatrix, 'dev', self.label2Idx[tag]) ##VER ACA
+            dev_pre, dev_rec, dev_f1, dev_tags, dev_att_scores = self.computePaddedF1(devMatrix, 'dev', self.label2Idx[tag]) ##VER ACA
             logging.info("[%s]: Prec: %.3f, Rec: %.3f, F1: %.4f" % (tag, dev_pre, dev_rec, dev_f1))
             dev_f1s += dev_f1
 
@@ -494,23 +517,22 @@ class BiLSTM:
             logging.info("Test-Data metrics:")
             test_f1s = 0
             for tag in self.label2Idx.keys():
-                test_pre, test_rec, test_f1 , test_tags = self.computeF1(testMatrix, 'test', self.label2Idx[tag]) ##Y ACA
+                test_pre, test_rec, test_f1 , test_tags, test_att_scores = self.computePaddedF1(testMatrix, 'test', self.label2Idx[tag]) ##Y ACA
                 logging.info("[%s]: Prec: %.3f, Rec: %.3f, F1: %.4f" % (tag, test_pre, test_rec, test_f1))
                 test_f1s += test_f1
             test_f1 = test_f1s / float(len(self.label2Idx))
-
         max_score = self.max_scores['dev']
         if self.writeOutput and max_score < dev_f1:
-            self.writeOutputToFile(devMatrix, dev_tags, '%.4f_%s' % (dev_f1, 'dev'))
+            self.writeOutputToFile(devMatrix, dev_tags, dev_att_scores, '%.4f_%s' % (dev_f1, 'dev'))
             self.max_scores['dev'] = dev_f1
         max_score = self.max_scores['test']
         if self.writeOutput and max_score < test_f1:
-            self.writeOutputToFile(testMatrix, test_tags, '%.4f_%s' % (test_f1, 'test'))
+            self.writeOutputToFile(testMatrix, test_tags, test_att_scores, '%.4f_%s' % (test_f1, 'test'))
             self.max_scores['test'] = test_f1
         return dev_f1, test_f1
 
 
-    def tagSentences(self, sentences):
+    def tagSentences(self, sentences): ###ADAPTAR A LA VERSION CON ATENCION????
     
         paddedPredLabels = self.predictLabels(sentences)        
         predLabels = []
@@ -527,40 +549,63 @@ class BiLSTM:
         
         return labels
     
-    def computeF1(self, sentences, name, tag_id): ##REFACTORIZAR TOD0 ESTO (VER QUE VIENE EN SENTENCES)
+    def computePaddedF1(self, sentences, name, tag_id):
         correctLabels = []
         predLabels = []
-        #paddedPredLabels = self.predictLabels(sentences)
-        paddedPredLabels = self.predictPaddedLabels(sentences)
-
-        #logging.info("ADSADSA")
-        #logging.info([layer.output for layer in self.model.layers if layer.name == 'attention_mul'])
+        sentences_att_scores = []
+        paddedPredLabels, padded_att_scores = self.predictPaddedLabels(sentences)
 
         padded_tokens, padded_labels = self.getPaddedSentences(sentences, self.labelKey)
         for idx in range(len(sentences)):
             unpaddedCorrectLabels = []
             unpaddedPredLabels = []
+            att_scores = []
+            #logging.info("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAa")
+            #logging.info(len(padded_att_scores[idx]))
+            #logging.info(len(sentences[idx]['tokens']))
 
-            for tokenIdx in range(557): #!!!!!!!!!!!!1 len(sentences[idx]['tokens'])
+            for tokenIdx in range(len(sentences[idx]['tokens'])):
                 if padded_tokens[idx][tokenIdx] != 0: #Skip padding tokens
-                    unpaddedCorrectLabels.append(padded_labels[idx][tokenIdx])
+                    unpaddedCorrectLabels.append(sentences[idx][self.labelKey][tokenIdx])
+                    unpaddedPredLabels.append(paddedPredLabels[idx][tokenIdx])
+                    att_scores.append(padded_att_scores[idx][tokenIdx])
+            correctLabels.append(unpaddedCorrectLabels)
+            predLabels.append(unpaddedPredLabels)
+            sentences_att_scores.append(att_scores)
+
+        pre, rec, f1  =  compute_f1_token_basis(predLabels, correctLabels, tag_id)
+        
+        return pre, rec, f1, predLabels, sentences_att_scores
+
+    def computeF1(self, sentences, name, tag_id):
+        correctLabels = []
+        predLabels = []
+        paddedPredLabels = self.predictLabels(sentences)
+
+        for idx in range(len(sentences)):
+            unpaddedCorrectLabels = []
+            unpaddedPredLabels = []
+            for tokenIdx in range(len(sentences[idx]['tokens'])):
+                if sentences[idx]['tokens'][tokenIdx] != 0:  # Skip padding tokens
+                    unpaddedCorrectLabels.append(sentences[idx][self.labelKey][tokenIdx]) #!!!!!chekear que le esta pasando ahi
                     unpaddedPredLabels.append(paddedPredLabels[idx][tokenIdx])
             correctLabels.append(unpaddedCorrectLabels)
             predLabels.append(unpaddedPredLabels)
 
-        pre, rec, f1  =  compute_f1_token_basis(predLabels, correctLabels, tag_id)
-        
+        pre, rec, f1 = compute_f1_token_basis(predLabels, correctLabels, tag_id)
+
         return pre, rec, f1, predLabels
     
-    def writeOutputToFile(self, sentences, predLabels, name):
+    def writeOutputToFile(self, sentences, predLabels, att_scores, name):
             outputName = 'tmp/'+name
             fOut = open(outputName, 'w')
             for sentenceIdx in range(len(sentences)):
                 for tokenIdx in range(len(sentences[sentenceIdx]['tokens'])):
                     token = self.idx2Word[sentences[sentenceIdx]['tokens'][tokenIdx]]
                     label = self.idx2Label[sentences[sentenceIdx][self.labelKey][tokenIdx]]
+                    att_score = att_scores[sentenceIdx][tokenIdx]
                     predLabel = self.idx2Label[predLabels[sentenceIdx][tokenIdx]]
-                    fOut.write("\t".join([token, label, predLabel]))
+                    fOut.write("\t".join([token, label, predLabel, "\t\t" + str(att_score)]))
                     fOut.write("\n")
                 fOut.write("\n")
             fOut.close()
