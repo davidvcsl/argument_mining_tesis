@@ -74,9 +74,11 @@ class BiLSTM:
         self.label2Idx = self.mappings[labelKey]  
         self.idx2Label = {v: k for k, v in self.label2Idx.items()}
         self.mappings['label'] = self.mappings[labelKey]
+        self.max_train_score = 0
         self.max_test_score = 0
         self.max_dev_score = 0
-        self.max_scores = {'test': self.max_test_score,
+        self.max_scores = {'train': self.max_test_score,
+                           'test': self.max_test_score,
                            'dev': self.max_dev_score}
 
 
@@ -179,6 +181,7 @@ class BiLSTM:
         layer = self.model.get_layer('dim_reduction')
         attention_model = Model(
             inputs=self.model.input, outputs=[layer.output, self.model.output])
+
         # The attention output is (batch_size, timesteps, features)
         return attention_model.predict(input_)
     
@@ -223,15 +226,11 @@ class BiLSTM:
             sentenceLabelKey = sentences[idx][labelKey]
             sentencesLabelKeys.append(sentenceLabelKey)
         #logging.info(sentences[0][labelKey])
-        #logging.info("CCCCCCCCCCCCCC")
         paddedSentences = pad_sequences(sentencesTokens, padding='post', maxlen=557)
         paddedLabelKeys = pad_sequences(sentencesLabelKeys, padding='post', maxlen=557) #, value=-1)
         #logging.info(paddedLabelKeys[0])
-        #logging.info("EEEEEEEEEEEEEE")
         #logging.info(sentences[0]['tokens'])
-        #logging.info("AAAAAAAAAAAAA")
         #logging.info(paddedSentences[0])
-        #logging.info("DDDDDDDDDDDD")
         #logging.info(sentences[0])
         #logging.info(9 / 0)
 
@@ -337,30 +336,29 @@ class BiLSTM:
             assert(numTrainExamples == sentenceCount) #Check that no sentence was missed 
 
     def attention_3d_block(self, inputs, size, mean_attention_vector=False):
-        logging.info("KEKEKKEASKDSOKDSAKDOSAKDKSAOKDSAO")
-        logging.info(keras.backend.int_shape(inputs))
+        #logging.info(keras.backend.int_shape(inputs))
         #inputs = Reshape((557, 200))(inputs)
-        logging.info(keras.backend.int_shape(inputs)[-1])
-        logging.info("POPOPPOPOPOOPPOPOPOPOPOPOPOPOPO")
+        #logging.info(keras.backend.int_shape(inputs)[-1])
 
         a = Permute((2, 1))(inputs)
 
 
         #size = K.int_shape(inputs)[-1]
-        a = TimeDistributed(Dense(557, activation='tanh'), name='attention_dense')(a) #(inputs) , softmax , size=TIME_STEPS
-        logging.info(a.shape) #(?, 200, 557)
+        a = TimeDistributed(Dense(557, activation='sigmoid'), name='attention_dense')(a) #(inputs) , softmax , size=TIME_STEPS #activation=linear,tanh
+        #logging.info(a.shape) #(?, 200, 557)
         #a_probs = Permute((2, 1), name='attention_vec')(a)
         #output_attention_mul = merge([inputs, a], name='attention_mul', mode='mul') #a_probs
         if mean_attention_vector:
             a = Lambda(lambda x: K.mean(x, axis=1), name='dim_reduction')(a)
-            logging.info(a.shape) #(?, 557)
+            #logging.info(a.shape) #(?, 557)
             a = RepeatVector(size)(a)
-            logging.info(a.shape) #(?, 200, 557)
+            #logging.info(a.shape) #(?, 200, 557)
             a = Permute((2, 1))(a)
-            logging.info(a.shape) #(?, 557, 200)
-        output_attention_mul = multiply([inputs,a], name='attention_mul')
+            #logging.info(a.shape) #(?, 557, 200)
+        output_attention_mul = multiply([inputs,a], name='attention_mul')  #!!!! MILI HACE EL MULTIPLI ANTES DEL PERMUTE
+        merged_input = Masking(mask_value=0)(output_attention_mul)
         #asd = Multiply()([inputs, a])
-        return output_attention_mul
+        return merged_input #output_attention_mul #
 
     def buildModel(self):        
         params = self.params  
@@ -435,12 +433,15 @@ class BiLSTM:
         logging.info("%d dev sentences" % len(self.dataset['devMatrix']))   
         logging.info("%d test sentences" % len(self.dataset['testMatrix']))   
         
+        trainMatrix = self.dataset['trainMatrix']
         devMatrix = self.dataset['devMatrix']
         testMatrix = self.dataset['testMatrix']
-   
+
         total_train_time = 0
         no_improvement_since = 0
-        
+
+        _, _, _ = self.computeScores(trainMatrix, devMatrix, testMatrix)
+
         for epoch in range(epochs):      
             sys.stdout.flush()           
             logging.info("--------- Epoch %d -----------" % (epoch+1))
@@ -453,17 +454,18 @@ class BiLSTM:
             
             
             start_time = time.time()
-            dev_score, test_score = self.computeScores(devMatrix, testMatrix)
+            train_score, dev_score, test_score = self.computeScores(trainMatrix, devMatrix, testMatrix)
             
             if dev_score > self.max_dev_score:
                 no_improvement_since = 0
+                self.max_train_score = train_score
                 self.max_dev_score = dev_score 
                 self.max_test_score = test_score
                 
                 if self.modelSavePath != None:
                     if self.devEqualTest:
                         savePath = self.modelSavePath.replace("[TestScore]_", "")
-                    savePath = self.modelSavePath.replace("[DevScore]", "%.4f" % dev_score).replace("[TestScore]", "%.4f" % test_score).replace("[Epoch]", str(epoch))
+                    savePath = self.modelSavePath.replace("[TrainScore]", "%.4f" % train_score).replace("[DevScore]", "%.4f" % dev_score).replace("[TestScore]", "%.4f" % test_score).replace("[Epoch]", str(epoch))
                     directory = os.path.dirname(savePath)
                     if not os.path.exists(directory):
                         os.makedirs(directory)
@@ -487,11 +489,11 @@ class BiLSTM:
                 
                 
             if self.resultsOut != None:
-                self.resultsOut.write("\t".join(map(str, [epoch+1, dev_score, test_score, self.max_dev_score, self.max_test_score])))
+                self.resultsOut.write("\t".join(map(str, [epoch+1, train_score, dev_score, test_score,self.max_train_score, self.max_dev_score, self.max_test_score])))
                 self.resultsOut.write("\n")
                 self.resultsOut.flush()
                 
-            logging.info("Max: %.4f on dev; %.4f on test" % (self.max_dev_score, self.max_test_score))
+            logging.info("Max: %.4f on train; %.4f on dev; %.4f on test" % (self.max_train_score, self.max_dev_score, self.max_test_score))
             logging.info("%.2f sec for evaluation" % (time.time() - start_time))
             
             if self.params['earlyStopping'] > 0 and no_improvement_since >= self.params['earlyStopping']:
@@ -499,10 +501,19 @@ class BiLSTM:
                 break
             
             
-    def computeScores(self, devMatrix, testMatrix):
-        return self.computeF1Scores(devMatrix, testMatrix)
+    def computeScores(self, trainMatrix, devMatrix, testMatrix):
+        return self.computeF1Scores(trainMatrix, devMatrix, testMatrix)
             
-    def computeF1Scores(self, devMatrix, testMatrix):
+    def computeF1Scores(self, trainMatrix, devMatrix, testMatrix):
+        logging.info("Train-Data metrics:")
+        train_f1s = 0
+        for tag in self.label2Idx.keys():
+            train_pre, train_rec, train_f1, train_tags, train_att_scores = self.computePaddedF1(trainMatrix, 'train',
+                                                                                      self.label2Idx[tag])  ##VER ACA
+            logging.info("[%s]: Prec: %.3f, Rec: %.3f, F1: %.4f" % (tag, train_pre, train_rec, train_f1))
+            train_f1s += train_f1
+
+        train_f1 = train_f1s / float(len(self.label2Idx))
         logging.info("Dev-Data metrics:")
         dev_f1s = 0
         for tag in self.label2Idx.keys():
@@ -521,6 +532,12 @@ class BiLSTM:
                 logging.info("[%s]: Prec: %.3f, Rec: %.3f, F1: %.4f" % (tag, test_pre, test_rec, test_f1))
                 test_f1s += test_f1
             test_f1 = test_f1s / float(len(self.label2Idx))
+
+        max_score = self.max_scores['train']
+        if self.writeOutput and max_score < train_f1:
+            self.writeOutputToFile(trainMatrix, train_tags, train_att_scores, '%.4f_%s' % (train_f1, 'train'))
+            self.max_scores['train'] = train_f1
+
         max_score = self.max_scores['dev']
         if self.writeOutput and max_score < dev_f1:
             self.writeOutputToFile(devMatrix, dev_tags, dev_att_scores, '%.4f_%s' % (dev_f1, 'dev'))
@@ -529,7 +546,7 @@ class BiLSTM:
         if self.writeOutput and max_score < test_f1:
             self.writeOutputToFile(testMatrix, test_tags, test_att_scores, '%.4f_%s' % (test_f1, 'test'))
             self.max_scores['test'] = test_f1
-        return dev_f1, test_f1
+        return train_f1, dev_f1, test_f1
 
 
     def tagSentences(self, sentences): ###ADAPTAR A LA VERSION CON ATENCION????
@@ -560,7 +577,6 @@ class BiLSTM:
             unpaddedCorrectLabels = []
             unpaddedPredLabels = []
             att_scores = []
-            #logging.info("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAa")
             #logging.info(len(padded_att_scores[idx]))
             #logging.info(len(sentences[idx]['tokens']))
 
