@@ -57,7 +57,7 @@ labelKey = 'AM_TAG'
 embeddingsPath = embeddingsPathOpt[sys.argv[2]]
 
 #Parameters of the network
-params = {'dropout': [0.25, 0.25], #Parametrizar si uso atencion antes o dps de lstm
+params = {'dropout': [0.5, 0.5], #Parametrizar si uso atencion antes o dps de lstm
           'LSTM-Size': [100],
           'optimizer': opts.optimizer,
           'miniBatchSize': 32,

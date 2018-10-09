@@ -344,7 +344,7 @@ class BiLSTM:
 
 
         #size = K.int_shape(inputs)[-1]
-        a = TimeDistributed(Dense(557, activation='sigmoid'), name='attention_dense')(a) #(inputs) , softmax , size=TIME_STEPS #activation=linear,tanh
+        a = TimeDistributed(Dense(557, activation='relu'), name='attention_dense')(a) #(inputs) , softmax , size=TIME_STEPS #activation=linear,tanh, kernel_initializer='random_uniform'
         #logging.info(a.shape) #(?, 200, 557)
         #a_probs = Permute((2, 1), name='attention_vec')(a)
         #output_attention_mul = merge([inputs, a], name='attention_mul', mode='mul') #a_probs
@@ -455,14 +455,14 @@ class BiLSTM:
             
             start_time = time.time()
             train_score, dev_score, test_score = self.computeScores(trainMatrix, devMatrix, testMatrix)
-            
+
             if dev_score > self.max_dev_score:
                 no_improvement_since = 0
                 self.max_train_score = train_score
                 self.max_dev_score = dev_score 
                 self.max_test_score = test_score
                 
-                if self.modelSavePath != None:
+                if False: #self.modelSavePath != None:
                     if self.devEqualTest:
                         savePath = self.modelSavePath.replace("[TestScore]_", "")
                     savePath = self.modelSavePath.replace("[TrainScore]", "%.4f" % train_score).replace("[DevScore]", "%.4f" % dev_score).replace("[TestScore]", "%.4f" % test_score).replace("[Epoch]", str(epoch))
@@ -487,7 +487,7 @@ class BiLSTM:
             else:
                 no_improvement_since += 1
                 
-                
+
             if self.resultsOut != None:
                 self.resultsOut.write("\t".join(map(str, [epoch+1, train_score, dev_score, test_score,self.max_train_score, self.max_dev_score, self.max_test_score])))
                 self.resultsOut.write("\n")
@@ -509,11 +509,12 @@ class BiLSTM:
         train_f1s = 0
         for tag in self.label2Idx.keys():
             train_pre, train_rec, train_f1, train_tags, train_att_scores = self.computePaddedF1(trainMatrix, 'train',
-                                                                                      self.label2Idx[tag])  ##VER ACA
+                                                                                                self.label2Idx[tag])  ##VER ACA
             logging.info("[%s]: Prec: %.3f, Rec: %.3f, F1: %.4f" % (tag, train_pre, train_rec, train_f1))
             train_f1s += train_f1
 
         train_f1 = train_f1s / float(len(self.label2Idx))
+        logging.info("")
         logging.info("Dev-Data metrics:")
         dev_f1s = 0
         for tag in self.label2Idx.keys():
@@ -534,17 +535,18 @@ class BiLSTM:
             test_f1 = test_f1s / float(len(self.label2Idx))
 
         max_score = self.max_scores['train']
+        self.writeOutputToFile(trainMatrix, train_tags, train_att_scores, '%.4f_%s' % (train_f1, 'train'))
         if self.writeOutput and max_score < train_f1:
-            self.writeOutputToFile(trainMatrix, train_tags, train_att_scores, '%.4f_%s' % (train_f1, 'train'))
             self.max_scores['train'] = train_f1
 
         max_score = self.max_scores['dev']
+        self.writeOutputToFile(devMatrix, dev_tags, dev_att_scores, '%.4f_%s' % (dev_f1, 'dev'))
         if self.writeOutput and max_score < dev_f1:
-            self.writeOutputToFile(devMatrix, dev_tags, dev_att_scores, '%.4f_%s' % (dev_f1, 'dev'))
             self.max_scores['dev'] = dev_f1
+
         max_score = self.max_scores['test']
+        self.writeOutputToFile(testMatrix, test_tags, test_att_scores, '%.4f_%s' % (test_f1, 'test'))
         if self.writeOutput and max_score < test_f1:
-            self.writeOutputToFile(testMatrix, test_tags, test_att_scores, '%.4f_%s' % (test_f1, 'test'))
             self.max_scores['test'] = test_f1
         return train_f1, dev_f1, test_f1
 
@@ -629,9 +631,9 @@ class BiLSTM:
     def loadModel(self, modelPath):
         import h5py
         import json
-        from neuralnets.keraslayers.ChainCRF import create_custom_objects
         
-        model = keras.models.load_model(modelPath, custom_objects=create_custom_objects())
+        model = keras.models.load_model(modelPath)
+        print(model.summary())
 
         with h5py.File(modelPath, 'r') as f:
             mappings = json.loads(f.attrs['mappings'])
