@@ -84,7 +84,7 @@ class BiLSTM:
 
     def trainModel(self):
         #if self.pad_sequences:
-            #asd1, asd2 = self.getPaddedSentences(dataset, labelKey)
+            #_,_ = self.getPaddedSentences(dataset, labelKey)
             #padear aca y obtener los tamaños que van a ser el batch size y el tamaño de los inputs (secuencia mas larga, )
         if self.model == None:
             self.buildModel() #pasar por parametro el batchsize y secuencia mas larga
@@ -96,7 +96,7 @@ class BiLSTM:
             K.set_value(self.model.optimizer.lr, self.learning_rate_updates[self.params['optimizer']][self.epoch])
             logging.info("Update Learning Rate to %f" % (K.get_value(self.model.optimizer.lr)))
 
-        iterator = self.online_iterate_dataset(trainMatrix, self.labelKey) if self.params['miniBatchSize'] == 1 else self.batch_iterate_padded_dataset(trainMatrix, self.labelKey) #pasarle asd1, asd2 y otras variables obtenidas antes del for (que despues se utilizan adentro, como sentence_indices
+        iterator = self.online_iterate_dataset(trainMatrix, self.labelKey) if self.params['miniBatchSize'] == 1 else self.batch_iterate_padded_dataset(trainMatrix, self.labelKey)
 
         for batch in iterator: 
             labels = batch[0]
@@ -109,7 +109,7 @@ class BiLSTM:
             
         predLabels = [None]*len(sentences)
 
-        sentenceLengths = self.getSentenceLengths(sentences) ##### PARA QUE LAS VUELVE A AGRUPAR?
+        sentenceLengths = self.getSentenceLengths(sentences)
 
         for senLength, indices in sentenceLengths.items():
             if self.skipOneTokenSentences and senLength == 1:
@@ -225,14 +225,9 @@ class BiLSTM:
             sentencesTokens.append(sentence)
             sentenceLabelKey = sentences[idx][labelKey]
             sentencesLabelKeys.append(sentenceLabelKey)
-        #logging.info(sentences[0][labelKey])
+
         paddedSentences = pad_sequences(sentencesTokens, padding='post', maxlen=557)
         paddedLabelKeys = pad_sequences(sentencesLabelKeys, padding='post', maxlen=557) #, value=-1)
-        #logging.info(paddedLabelKeys[0])
-        #logging.info(sentences[0]['tokens'])
-        #logging.info(paddedSentences[0])
-        #logging.info(sentences[0])
-        #logging.info(9 / 0)
 
         return paddedSentences, paddedLabelKeys
 
@@ -250,13 +245,11 @@ class BiLSTM:
         trainSentenceLengthsLabels = self.trainSentenceLengthsLabels
 
         sentenceIndices = [i for i in range(trainSentenceLengthsKeys)]
-        random.shuffle(sentenceIndices)  # Para que?
+        random.shuffle(sentenceIndices)
         sentenceCount = len(sentenceIndices)
 
         bins = int(math.ceil(sentenceCount / float(self.params['miniBatchSize'])))
         binSize = int(math.ceil(sentenceCount / float(bins)))
-
-        #Desacoplar hasta aca
 
         numTrainExamples = 0
         for binNr in range(bins):
@@ -292,19 +285,14 @@ class BiLSTM:
             self.trainSentenceLengths = self.getSentenceLengths(dataset)
             self.trainSentenceLengthsKeys = list(self.trainSentenceLengths.keys())
         trainSentenceLengths = self.trainSentenceLengths
-        #keylist = trainSentenceLengths.keys()
-        #for key in sorted(keylist):
-        #    logging.info(key)
-        #    logging.info(len(trainSentenceLengths[key]))
-        #logging.info(trainSentenceLengths)
         trainSentenceLengthsKeys = self.trainSentenceLengthsKeys
 
-        random.shuffle(trainSentenceLengthsKeys) #Para que?
+        random.shuffle(trainSentenceLengthsKeys)
         for senLength in trainSentenceLengthsKeys:
             if self.skipOneTokenSentences and senLength == 1: #Skip 1 token sentences
                 continue
             sentenceIndices = trainSentenceLengths[senLength]
-            random.shuffle(sentenceIndices) #Para que?
+            random.shuffle(sentenceIndices)
             sentenceCount = len(sentenceIndices)
             
             
@@ -336,29 +324,22 @@ class BiLSTM:
             assert(numTrainExamples == sentenceCount) #Check that no sentence was missed 
 
     def attention_3d_block(self, inputs, size, mean_attention_vector=False):
-        #logging.info(keras.backend.int_shape(inputs))
-        #inputs = Reshape((557, 200))(inputs)
-        #logging.info(keras.backend.int_shape(inputs)[-1])
 
         a = Permute((2, 1))(inputs)
 
-
         #size = K.int_shape(inputs)[-1]
-        a = TimeDistributed(Dense(557, activation='relu'), name='attention_dense')(a) #(inputs) , softmax , size=TIME_STEPS #activation=linear,tanh, kernel_initializer='random_uniform'
+        a = TimeDistributed(Dense(557, activation='tanh'), name='attention_dense')(a) #(inputs) , softmax , size=TIME_STEPS #activation=linear,tanh, kernel_initializer='random_uniform'
         #logging.info(a.shape) #(?, 200, 557)
         #a_probs = Permute((2, 1), name='attention_vec')(a)
         #output_attention_mul = merge([inputs, a], name='attention_mul', mode='mul') #a_probs
         if mean_attention_vector:
             a = Lambda(lambda x: K.mean(x, axis=1), name='dim_reduction')(a)
-            #logging.info(a.shape) #(?, 557)
             a = RepeatVector(size)(a)
-            #logging.info(a.shape) #(?, 200, 557)
             a = Permute((2, 1))(a)
-            #logging.info(a.shape) #(?, 557, 200)
-        output_attention_mul = multiply([inputs,a], name='attention_mul')  #!!!! MILI HACE EL MULTIPLI ANTES DEL PERMUTE
+        output_attention_mul = multiply([inputs,a], name='attention_mul')
         merged_input = Masking(mask_value=0)(output_attention_mul)
         #asd = Multiply()([inputs, a])
-        return merged_input #output_attention_mul #
+        return merged_input #output_attention_mul
 
     def buildModel(self):        
         params = self.params  
@@ -366,13 +347,9 @@ class BiLSTM:
         embeddings = self.embeddings
 
         tokens = Sequential()
-        tokens.add(Embedding(input_length=557, input_dim=embeddings.shape[0], output_dim=embeddings.shape[1],  weights=[embeddings], trainable=False, name='token_emd')) #input_shape=(557,)
+        tokens.add(Embedding(input_length=557, input_dim=embeddings.shape[0], output_dim=embeddings.shape[1],  weights=[embeddings], mask_zero=False, trainable=False, name='token_emd')) #input_shape=(557,)
         layerIn = tokens.input
         layerOut = tokens.output
-        logging.info(embeddings.shape[0]) #400002
-        logging.info(embeddings.shape[1]) #300
-        logging.info(layerIn.shape) #(?,557)
-        logging.info(layerOut.shape) #(?,557,300)
 
         #attention_mul = self.attention_3d_block(layerOut, int(layerOut.shape[2]))
 
@@ -390,8 +367,6 @@ class BiLSTM:
                     lstmLayer = TimeDistributed(Dropout(params['dropout']), name="dropout_"+str(cnt))(lstmLayer)
             
             cnt += 1
-
-        logging.info(lstmLayer.shape) #(?, ?, size*2 = 200)
 
         attention_mul = self.attention_3d_block(lstmLayer, int(lstmLayer.shape[2]), True)
         #attention_mul = Flatten()(attention_mul)
@@ -509,7 +484,7 @@ class BiLSTM:
         train_f1s = 0
         for tag in self.label2Idx.keys():
             train_pre, train_rec, train_f1, train_tags, train_att_scores = self.computePaddedF1(trainMatrix, 'train',
-                                                                                                self.label2Idx[tag])  ##VER ACA
+                                                                                                self.label2Idx[tag])
             logging.info("[%s]: Prec: %.3f, Rec: %.3f, F1: %.4f" % (tag, train_pre, train_rec, train_f1))
             train_f1s += train_f1
 
@@ -518,7 +493,7 @@ class BiLSTM:
         logging.info("Dev-Data metrics:")
         dev_f1s = 0
         for tag in self.label2Idx.keys():
-            dev_pre, dev_rec, dev_f1, dev_tags, dev_att_scores = self.computePaddedF1(devMatrix, 'dev', self.label2Idx[tag]) ##VER ACA
+            dev_pre, dev_rec, dev_f1, dev_tags, dev_att_scores = self.computePaddedF1(devMatrix, 'dev', self.label2Idx[tag])
             logging.info("[%s]: Prec: %.3f, Rec: %.3f, F1: %.4f" % (tag, dev_pre, dev_rec, dev_f1))
             dev_f1s += dev_f1
 
@@ -529,7 +504,7 @@ class BiLSTM:
             logging.info("Test-Data metrics:")
             test_f1s = 0
             for tag in self.label2Idx.keys():
-                test_pre, test_rec, test_f1 , test_tags, test_att_scores = self.computePaddedF1(testMatrix, 'test', self.label2Idx[tag]) ##Y ACA
+                test_pre, test_rec, test_f1 , test_tags, test_att_scores = self.computePaddedF1(testMatrix, 'test', self.label2Idx[tag])
                 logging.info("[%s]: Prec: %.3f, Rec: %.3f, F1: %.4f" % (tag, test_pre, test_rec, test_f1))
                 test_f1s += test_f1
             test_f1 = test_f1s / float(len(self.label2Idx))
@@ -551,7 +526,7 @@ class BiLSTM:
         return train_f1, dev_f1, test_f1
 
 
-    def tagSentences(self, sentences): ###ADAPTAR A LA VERSION CON ATENCION????
+    def tagSentences(self, sentences):
     
         paddedPredLabels = self.predictLabels(sentences)        
         predLabels = []
@@ -579,8 +554,6 @@ class BiLSTM:
             unpaddedCorrectLabels = []
             unpaddedPredLabels = []
             att_scores = []
-            #logging.info(len(padded_att_scores[idx]))
-            #logging.info(len(sentences[idx]['tokens']))
 
             for tokenIdx in range(len(sentences[idx]['tokens'])):
                 if padded_tokens[idx][tokenIdx] != 0: #Skip padding tokens
@@ -605,7 +578,7 @@ class BiLSTM:
             unpaddedPredLabels = []
             for tokenIdx in range(len(sentences[idx]['tokens'])):
                 if sentences[idx]['tokens'][tokenIdx] != 0:  # Skip padding tokens
-                    unpaddedCorrectLabels.append(sentences[idx][self.labelKey][tokenIdx]) #!!!!!chekear que le esta pasando ahi
+                    unpaddedCorrectLabels.append(sentences[idx][self.labelKey][tokenIdx])
                     unpaddedPredLabels.append(paddedPredLabels[idx][tokenIdx])
             correctLabels.append(unpaddedCorrectLabels)
             predLabels.append(unpaddedPredLabels)

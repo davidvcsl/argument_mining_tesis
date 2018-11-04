@@ -61,6 +61,7 @@ params = {'dropout': [0.5, 0.5], #Parametrizar si uso atencion antes o dps de ls
           'LSTM-Size': [100],
           'optimizer': opts.optimizer,
           'miniBatchSize': 32,
+          'earlyStopping': 10,
           'pad_sequences': True}
 
 
