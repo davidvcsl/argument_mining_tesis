@@ -25,8 +25,6 @@ import logging
 
 from util.F1Validation import compute_f1_token_basis
 
-
-import sys
 if (sys.version_info > (3, 0)):
     import pickle as pkl
 else: #Python 2.7 imports
@@ -54,6 +52,9 @@ class BiLSTM:
               'earlyStopping': -1,
               'clipvalue': 0,
               'clipnorm': 1,
+              'attentionActivation': "sigmoid",
+              'noAttention': False,
+              'experimentDate': 0,
               'pad_sequences': False} #Default params
 
 
@@ -80,6 +81,12 @@ class BiLSTM:
         self.max_scores = {'train': self.max_test_score,
                            'test': self.max_test_score,
                            'dev': self.max_dev_score}
+        self.last_scores = {'train': {'O':"",'Claim':"",'MajorClaim':"",'Premise':""},
+                        'test': {'O':"",'Claim':"",'MajorClaim':"",'Premise':""},
+                        'dev': {'O':"",'Claim':"",'MajorClaim':"",'Premise':""}}
+        self.best_scores = {'train': {},
+                        'test': {},
+                        'dev': {}}
 
 
     def trainModel(self):
@@ -325,10 +332,11 @@ class BiLSTM:
 
     def attention_3d_block(self, inputs, size, mean_attention_vector=False):
 
+        activation_funct = self.params['attentionActivation'] if (self.params['attentionActivation']) != None else "relu"
+        logging.info("Activation Function: " + activation_funct)
         a = Permute((2, 1))(inputs)
-
         #size = K.int_shape(inputs)[-1]
-        a = TimeDistributed(Dense(557, activation='tanh'), name='attention_dense')(a) #(inputs) , softmax , size=TIME_STEPS #activation=linear,tanh, kernel_initializer='random_uniform'
+        a = TimeDistributed(Dense(557, activation=activation_funct), name='attention_dense')(a) #(inputs) , softmax , size=TIME_STEPS #activation=linear,tanh, kernel_initializer='random_uniform'
         #logging.info(a.shape) #(?, 200, 557)
         #a_probs = Permute((2, 1), name='attention_vec')(a)
         #output_attention_mul = merge([inputs, a], name='attention_mul', mode='mul') #a_probs
@@ -341,9 +349,9 @@ class BiLSTM:
         #asd = Multiply()([inputs, a])
         return merged_input #output_attention_mul
 
-    def buildModel(self):        
-        params = self.params  
-        
+    def buildModel(self):
+        logging.info("After BiLSTM Attention")
+        params = self.params
         embeddings = self.embeddings
 
         tokens = Sequential()
@@ -403,7 +411,8 @@ class BiLSTM:
             logging.debug(model.get_config())            
             logging.debug("Optimizer: %s, %s" % (str(type(opt)), str(opt.get_config())))
 
-    def evaluate(self, epochs):  
+    def evaluate(self, epochs):
+        init_time = time.time()
         logging.info("%d train sentences" % len(self.dataset['trainMatrix']))     
         logging.info("%d dev sentences" % len(self.dataset['devMatrix']))   
         logging.info("%d test sentences" % len(self.dataset['testMatrix']))   
@@ -437,7 +446,7 @@ class BiLSTM:
                 self.max_dev_score = dev_score 
                 self.max_test_score = test_score
                 
-                if False: #self.modelSavePath != None:
+                if self.modelSavePath != None:
                     if self.devEqualTest:
                         savePath = self.modelSavePath.replace("[TestScore]_", "")
                     savePath = self.modelSavePath.replace("[TrainScore]", "%.4f" % train_score).replace("[DevScore]", "%.4f" % dev_score).replace("[TestScore]", "%.4f" % test_score).replace("[Epoch]", str(epoch))
@@ -473,6 +482,22 @@ class BiLSTM:
             
             if self.params['earlyStopping'] > 0 and no_improvement_since >= self.params['earlyStopping']:
                 logging.info("!!! Early stopping, no improvement after "+str(no_improvement_since)+" epochs !!!")
+                final_time = time.time() - init_time
+                experiment_params = "batch_" + str(self.params['miniBatchSize']) + "_lstm_" + str(
+                    self.params['LSTM-Size'][0]) + "_dropout_" + str(self.params['dropout'][0]) + '-' + str(
+                    self.params['dropout'][1]) + '_' + self.params['attentionActivation']
+                output = 'tmp/' + str(self.params['experimentDate']) + '_' + experiment_params
+                outputName = output + '/' + str(epoch) + "_ExperimentTime_" + str(final_time) + "_EpochsTime_" + str(total_train_time)
+                fOut = open(outputName, 'w')
+                fOut.write("\t".join(["train: ", str(self.best_scores['train']['O']), str(self.best_scores['train']['Premise']), str(self.best_scores['train']['Claim']), str(self.best_scores['train']['MajorClaim'])]))
+                fOut.write("\n")
+                fOut.write("\t".join(["dev: ", str(self.best_scores['dev']['O']), str(self.best_scores['dev']['Premise']),
+                                      str(self.best_scores['dev']['Claim']), str(self.best_scores['dev']['MajorClaim'])]))
+                fOut.write("\n")
+                fOut.write("\t".join(["test: ", str(self.best_scores['test']['O']), str(self.best_scores['test']['Premise']),
+                                      str(self.best_scores['test']['Claim']), str(self.best_scores['test']['MajorClaim'])]))
+                fOut.close()
+                logging.info("%.2f sec for whole execution" % (final_time))
                 break
             
             
@@ -485,6 +510,7 @@ class BiLSTM:
         for tag in self.label2Idx.keys():
             train_pre, train_rec, train_f1, train_tags, train_att_scores = self.computePaddedF1(trainMatrix, 'train',
                                                                                                 self.label2Idx[tag])
+            self.last_scores['train'][tag] = tag + "_" + "prec_" + str(train_pre) + "_rec_" + str(train_rec) + "_f1_" + str(train_f1)
             logging.info("[%s]: Prec: %.3f, Rec: %.3f, F1: %.4f" % (tag, train_pre, train_rec, train_f1))
             train_f1s += train_f1
 
@@ -494,6 +520,8 @@ class BiLSTM:
         dev_f1s = 0
         for tag in self.label2Idx.keys():
             dev_pre, dev_rec, dev_f1, dev_tags, dev_att_scores = self.computePaddedF1(devMatrix, 'dev', self.label2Idx[tag])
+            self.last_scores['dev'][tag] = tag + "_" + "prec_" + str(dev_pre) + "_rec_" + str(
+                dev_rec) + "_f1_" + str(dev_f1)
             logging.info("[%s]: Prec: %.3f, Rec: %.3f, F1: %.4f" % (tag, dev_pre, dev_rec, dev_f1))
             dev_f1s += dev_f1
 
@@ -505,6 +533,8 @@ class BiLSTM:
             test_f1s = 0
             for tag in self.label2Idx.keys():
                 test_pre, test_rec, test_f1 , test_tags, test_att_scores = self.computePaddedF1(testMatrix, 'test', self.label2Idx[tag])
+                self.last_scores['test'][tag] = tag + "_" + "prec_" + str(test_pre) + "_rec_" + str(
+                    test_rec) + "_f1_" + str(test_f1)
                 logging.info("[%s]: Prec: %.3f, Rec: %.3f, F1: %.4f" % (tag, test_pre, test_rec, test_f1))
                 test_f1s += test_f1
             test_f1 = test_f1s / float(len(self.label2Idx))
@@ -513,16 +543,19 @@ class BiLSTM:
         self.writeOutputToFile(trainMatrix, train_tags, train_att_scores, '%.4f_%s' % (train_f1, 'train'))
         if self.writeOutput and max_score < train_f1:
             self.max_scores['train'] = train_f1
+            self.best_scores['train'] = self.last_scores['train']
 
         max_score = self.max_scores['dev']
         self.writeOutputToFile(devMatrix, dev_tags, dev_att_scores, '%.4f_%s' % (dev_f1, 'dev'))
         if self.writeOutput and max_score < dev_f1:
             self.max_scores['dev'] = dev_f1
+            self.best_scores['dev'] = self.last_scores['dev']
 
         max_score = self.max_scores['test']
         self.writeOutputToFile(testMatrix, test_tags, test_att_scores, '%.4f_%s' % (test_f1, 'test'))
         if self.writeOutput and max_score < test_f1:
             self.max_scores['test'] = test_f1
+            self.best_scores['test'] = self.last_scores['test']
         return train_f1, dev_f1, test_f1
 
 
@@ -588,7 +621,10 @@ class BiLSTM:
         return pre, rec, f1, predLabels
     
     def writeOutputToFile(self, sentences, predLabels, att_scores, name):
-            outputName = 'tmp/'+name
+            experiment_params = "batch_" + str(self.params['miniBatchSize'])+ "_lstm_" + str(self.params['LSTM-Size'][0])+ "_dropout_" + str(self.params['dropout'][0])+ '-' + str(self.params['dropout'][1]) + '_' + self.params['attentionActivation']
+            output = 'tmp/'+ str(self.params['experimentDate']) + '_' + experiment_params
+            if not os.path.isdir(output): os.mkdir(output)
+            outputName = output + '/' + name
             fOut = open(outputName, 'w')
             for sentenceIdx in range(len(sentences)):
                 for tokenIdx in range(len(sentences[sentenceIdx]['tokens'])):
@@ -616,3 +652,253 @@ class BiLSTM:
             
         self.model = model        
         self.setMappings(None, mappings)
+
+
+class BeforeBiLSTM(BiLSTM):
+
+    def buildModel(self):
+        logging.info("Before BiLSTM Attention")
+        params = self.params
+        embeddings = self.embeddings
+
+        tokens = Sequential()
+        tokens.add(Embedding(input_length=557, input_dim=embeddings.shape[0], output_dim=embeddings.shape[1],
+                             weights=[embeddings], mask_zero=False, trainable=False,
+                             name='token_emd'))  # input_shape=(557,)
+        layerIn = tokens.input
+        layerOut = tokens.output
+
+        attention_mul = self.attention_3d_block(layerOut, int(layerOut.shape[2]), True)
+
+        # Add LSTMs
+        cnt = 1
+        for size in params['LSTM-Size']:
+            if isinstance(params['dropout'], (list, tuple)):
+                lstmLayer = Bidirectional(LSTM(size, return_sequences=True, dropout=params['dropout'][0],
+                                               recurrent_dropout=params['dropout'][1]), name="main_LSTM_" + str(cnt))(
+                    attention_mul)  # layerOut #attention_mul
+
+            else:
+                """ Naive dropout """
+                lstmLayer = Bidirectional(LSTM(size, return_sequences=True), name="LSTM_" + str(cnt))(layerOut)
+
+                if params['dropout'] > 0.0:
+                    lstmLayer = TimeDistributed(Dropout(params['dropout']), name="dropout_" + str(cnt))(lstmLayer)
+
+            cnt += 1
+
+        # attention_mul = Flatten()(attention_mul)
+
+        # Softmax Decoder
+        activationLayer = TimeDistributed(Dense(len(self.dataset['mappings'][self.labelKey]), activation='softmax'),
+                                          name='softmax_output')(lstmLayer)  # attention_mul #lstmLayer
+        lossFct = 'sparse_categorical_crossentropy'
+
+        optimizerParams = {}
+        if 'clipnorm' in self.params and self.params['clipnorm'] != None and self.params['clipnorm'] > 0:
+            optimizerParams['clipnorm'] = self.params['clipnorm']
+
+        if 'clipvalue' in self.params and self.params['clipvalue'] != None and self.params['clipvalue'] > 0:
+            optimizerParams['clipvalue'] = self.params['clipvalue']
+
+        if params['optimizer'].lower() == 'adam':
+            opt = Adam(**optimizerParams)
+        elif params['optimizer'].lower() == 'nadam':
+            opt = Nadam(**optimizerParams)
+        elif params['optimizer'].lower() == 'rmsprop':
+            opt = RMSprop(**optimizerParams)
+        elif params['optimizer'].lower() == 'adadelta':
+            opt = Adadelta(**optimizerParams)
+        elif params['optimizer'].lower() == 'adagrad':
+            opt = Adagrad(**optimizerParams)
+        elif params['optimizer'].lower() == 'sgd':
+            opt = SGD(lr=0.1, **optimizerParams)
+        model = Model(layerIn, activationLayer)
+        model.compile(loss=lossFct, optimizer=opt)
+
+        self.model = model
+        if self.verboseBuild:
+            model.summary()
+            logging.debug(model.get_config())
+            logging.debug("Optimizer: %s, %s" % (str(type(opt)), str(opt.get_config())))
+
+
+class NoAttention(BiLSTM):
+
+    def predictPaddedLabels(self, sentences):
+        if self.model == None:
+            self.buildModel()
+
+        sentencesNumber= len(sentences)
+        sentencesPaddedTokens, sentenceLabels = self.getPaddedSentences(sentences, self.labelKey)
+
+        features = ['tokens']
+        inputData = {name: [] for name in features}
+
+        for idx in range(sentencesNumber):
+            for name in features:
+                inputData[name].append(sentencesPaddedTokens[idx])
+
+        for name in features:
+            inputData[name] = np.asarray(inputData[name])
+
+        predictions = self.model.predict([inputData[name] for name in features], verbose=False)
+        predictions = predictions.argmax(axis=-1)  # Predict classes
+
+        for idx in range(sentencesNumber):
+            sentences[idx]['label'] = predictions[idx]
+
+        return predictions
+
+    def computeF1Scores(self, trainMatrix, devMatrix, testMatrix):
+        logging.info("Train-Data metrics:")
+        train_f1s = 0
+        for tag in self.label2Idx.keys():
+            train_pre, train_rec, train_f1, train_tags = self.computePaddedF1(trainMatrix, 'train', self.label2Idx[tag])
+            self.last_scores['train'][tag] = tag + "_" + "prec_" + str(train_pre) + "_rec_" + str(
+                train_rec) + "_f1_" + str(train_f1)
+            logging.info("[%s]: Prec: %.3f, Rec: %.3f, F1: %.4f" % (tag, train_pre, train_rec, train_f1))
+            train_f1s += train_f1
+
+        train_f1 = train_f1s / float(len(self.label2Idx))
+        logging.info("")
+        logging.info("Dev-Data metrics:")
+        dev_f1s = 0
+        for tag in self.label2Idx.keys():
+            dev_pre, dev_rec, dev_f1, dev_tags = self.computePaddedF1(devMatrix, 'dev', self.label2Idx[tag])
+            self.last_scores['dev'][tag] = tag + "_" + "prec_" + str(dev_pre) + "_rec_" + str(
+                dev_rec) + "_f1_" + str(dev_f1)
+            logging.info("[%s]: Prec: %.3f, Rec: %.3f, F1: %.4f" % (tag, dev_pre, dev_rec, dev_f1))
+            dev_f1s += dev_f1
+
+        dev_f1 = dev_f1s / float(len(self.label2Idx))
+        test_f1 = dev_f1
+        if not self.devEqualTest:
+            logging.info("")
+            logging.info("Test-Data metrics:")
+            test_f1s = 0
+            for tag in self.label2Idx.keys():
+                test_pre, test_rec, test_f1 , test_tags = self.computePaddedF1(testMatrix, 'test', self.label2Idx[tag])
+                self.last_scores['test'][tag] = tag + "_" + "prec_" + str(test_pre) + "_rec_" + str(
+                    test_rec) + "_f1_" + str(test_f1)
+                logging.info("[%s]: Prec: %.3f, Rec: %.3f, F1: %.4f" % (tag, test_pre, test_rec, test_f1))
+                test_f1s += test_f1
+            test_f1 = test_f1s / float(len(self.label2Idx))
+
+        max_score = self.max_scores['train']
+        self.writeOutputToFile(trainMatrix, train_tags, '%.4f_%s' % (train_f1, 'train'))
+        if self.writeOutput and max_score < train_f1:
+            self.max_scores['train'] = train_f1
+            self.best_scores['train'] = self.last_scores['train']
+
+        max_score = self.max_scores['dev']
+        self.writeOutputToFile(devMatrix, dev_tags, '%.4f_%s' % (dev_f1, 'dev'))
+        if self.writeOutput and max_score < dev_f1:
+            self.max_scores['dev'] = dev_f1
+            self.best_scores['dev'] = self.last_scores['dev']
+
+        max_score = self.max_scores['test']
+        self.writeOutputToFile(testMatrix, test_tags, '%.4f_%s' % (test_f1, 'test'))
+        if self.writeOutput and max_score < test_f1:
+            self.max_scores['test'] = test_f1
+            self.best_scores['test'] = self.last_scores['test']
+        return train_f1, dev_f1, test_f1
+
+    def computePaddedF1(self, sentences, name, tag_id):
+        correctLabels = []
+        predLabels = []
+        paddedPredLabels = self.predictPaddedLabels(sentences)
+
+        padded_tokens, padded_labels = self.getPaddedSentences(sentences, self.labelKey)
+        for idx in range(len(sentences)):
+            unpaddedCorrectLabels = []
+            unpaddedPredLabels = []
+
+            for tokenIdx in range(len(sentences[idx]['tokens'])):
+                if padded_tokens[idx][tokenIdx] != 0:  # Skip padding tokens
+                    unpaddedCorrectLabels.append(sentences[idx][self.labelKey][tokenIdx])
+                    unpaddedPredLabels.append(paddedPredLabels[idx][tokenIdx])
+            correctLabels.append(unpaddedCorrectLabels)
+            predLabels.append(unpaddedPredLabels)
+
+        pre, rec, f1 = compute_f1_token_basis(predLabels, correctLabels, tag_id)
+
+        return pre, rec, f1, predLabels
+
+    def buildModel(self):
+        logging.info("NOTENGOATENCION")
+        params = self.params
+        embeddings = self.embeddings
+
+        tokens = Sequential()
+        tokens.add(Embedding(input_length=557, input_dim=embeddings.shape[0], output_dim=embeddings.shape[1],
+                             weights=[embeddings], mask_zero=False, trainable=False,
+                             name='token_emd'))
+        layerIn = tokens.input
+        layerOut = tokens.output
+
+        # Add LSTMs
+        cnt = 1
+        for size in params['LSTM-Size']:
+            if isinstance(params['dropout'], (list, tuple)):
+                lstmLayer = Bidirectional(LSTM(size, return_sequences=True, dropout=params['dropout'][0],
+                                               recurrent_dropout=params['dropout'][1]), name="main_LSTM_" + str(cnt))(
+                    layerOut)
+
+            else:
+                """ Naive dropout """
+                lstmLayer = Bidirectional(LSTM(size, return_sequences=True), name="LSTM_" + str(cnt))(layerOut)
+
+                if params['dropout'] > 0.0:
+                    lstmLayer = TimeDistributed(Dropout(params['dropout']), name="dropout_" + str(cnt))(lstmLayer)
+
+            cnt += 1
+
+        # Softmax Decoder
+        activationLayer = TimeDistributed(Dense(len(self.dataset['mappings'][self.labelKey]), activation='softmax'),
+                                          name='softmax_output')(lstmLayer)
+        lossFct = 'sparse_categorical_crossentropy'
+
+        optimizerParams = {}
+        if 'clipnorm' in self.params and self.params['clipnorm'] != None and self.params['clipnorm'] > 0:
+            optimizerParams['clipnorm'] = self.params['clipnorm']
+
+        if 'clipvalue' in self.params and self.params['clipvalue'] != None and self.params['clipvalue'] > 0:
+            optimizerParams['clipvalue'] = self.params['clipvalue']
+
+        if params['optimizer'].lower() == 'adam':
+            opt = Adam(**optimizerParams)
+        elif params['optimizer'].lower() == 'nadam':
+            opt = Nadam(**optimizerParams)
+        elif params['optimizer'].lower() == 'rmsprop':
+            opt = RMSprop(**optimizerParams)
+        elif params['optimizer'].lower() == 'adadelta':
+            opt = Adadelta(**optimizerParams)
+        elif params['optimizer'].lower() == 'adagrad':
+            opt = Adagrad(**optimizerParams)
+        elif params['optimizer'].lower() == 'sgd':
+            opt = SGD(lr=0.1, **optimizerParams)
+        model = Model(layerIn, activationLayer)
+        model.compile(loss=lossFct, optimizer=opt)
+
+        self.model = model
+        if self.verboseBuild:
+            model.summary()
+            logging.debug(model.get_config())
+            logging.debug("Optimizer: %s, %s" % (str(type(opt)), str(opt.get_config())))
+
+    def writeOutputToFile(self, sentences, predLabels , name):
+            experiment_params = "batch_" + str(self.params['miniBatchSize'])+ "_lstm_" + str(self.params['LSTM-Size'][0])+ "_dropout_" + str(self.params['dropout'][0])+ '-' + str(self.params['dropout'][1]) + "_NoAttention"
+            output = 'tmp/'+ str(self.params['experimentDate']) + '_' + experiment_params
+            if not os.path.isdir(output): os.mkdir(output)
+            outputName = output + '/' + name
+            fOut = open(outputName, 'w')
+            for sentenceIdx in range(len(sentences)):
+                for tokenIdx in range(len(sentences[sentenceIdx]['tokens'])):
+                    token = self.idx2Word[sentences[sentenceIdx]['tokens'][tokenIdx]]
+                    label = self.idx2Label[sentences[sentenceIdx][self.labelKey][tokenIdx]]
+                    predLabel = self.idx2Label[predLabels[sentenceIdx][tokenIdx]]
+                    fOut.write("\t".join([token, label, predLabel]))
+                    fOut.write("\n")
+                fOut.write("\n")
+            fOut.close()

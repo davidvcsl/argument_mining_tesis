@@ -2,7 +2,7 @@ from __future__ import print_function
 import os
 import logging
 import sys
-from neuralnets.BiLSTM import BiLSTM
+from neuralnets.BiLSTM import BiLSTM, BeforeBiLSTM, NoAttention
 from util.preprocessing import perpareDataset, loadDatasetPickle
 from optparse import OptionParser
 
@@ -32,6 +32,31 @@ op.add_option("--optimizer",
               dest="optimizer",
               default="nadam",
               help="nadam / adam / rmsprop / adadelta / adagrad / sgd")
+op.add_option("--miniBatchSize",
+              dest="miniBatchSize",
+              default="32")
+op.add_option("--lstmSize",
+              dest="lstmSize",
+              default=100,
+              help="50 / 100 / 200 / 300")
+op.add_option("--dropout",
+              dest="dropout",
+              default=0.5,
+              help="0.1 / 0.25 / 0.35 / 0.5")
+op.add_option("--attentionActivation",
+              dest="attentionActivation",
+              default="sigmoid",
+              help="sigmoid / relu / tanh / softmax")
+op.add_option("--experimentDate",
+              dest="experimentDate",
+              default=0)
+op.add_option("--beforeBiLSTM",
+              dest="beforeBiLSTM",
+              default=True)
+op.add_option("--noAttention",
+              dest="noAttention",
+              default=False)
+
 op.add_option("--eval",
               dest="evalTest",
               default=True,
@@ -57,11 +82,15 @@ labelKey = 'AM_TAG'
 embeddingsPath = embeddingsPathOpt[sys.argv[2]]
 
 #Parameters of the network
-params = {'dropout': [0.5, 0.5], #Parametrizar si uso atencion antes o dps de lstm
-          'LSTM-Size': [100],
+params = {'dropout': [float(opts.dropout), float(opts.dropout)], #Parametrizar si uso context o word attention -> afecta al parametro de mask zero en los embeddings!
+          'LSTM-Size': [int(opts.lstmSize)],
           'optimizer': opts.optimizer,
-          'miniBatchSize': 32,
+          'miniBatchSize': opts.miniBatchSize,
           'earlyStopping': 10,
+          'attentionActivation': opts.attentionActivation,
+          'experimentDate': opts.experimentDate,
+          'beforeBiLSTM': opts.beforeBiLSTM,
+          'noAttention': opts.noAttention,
           'pad_sequences': True}
 
 
@@ -95,10 +124,12 @@ print("Train Sentences:", len(data['trainMatrix']))
 print("Dev Sentences:", len(data['devMatrix']))
 print("Test Sentences:", len(data['testMatrix']))
 
-
-model = BiLSTM(devEqualTest=not opts.evalTest,params=params)
+if (params['noAttention']):
+    model = NoAttention(devEqualTest=not opts.evalTest,params=params)
+else:
+    model = BeforeBiLSTM(devEqualTest=not opts.evalTest,params=params) if (params['beforeBiLSTM']) else BiLSTM(devEqualTest=not opts.evalTest,params=params)
 model.setMappings(embeddings, data['mappings'])
 model.setTrainDataset(data, labelKey)
 model.verboseBuild = True
-model.modelSavePath = "models/%s/%s/[DevScore]_[TestScore]_[Epoch].h5" % (datasetName, labelKey) #Enable this line to save the model to the disk
+#model.modelSavePath = "models/%s/%s/[DevScore]_[TestScore]_[Epoch].h5" % (datasetName, labelKey) #Enable this line to save the model to the disk
 model.evaluate(100)
