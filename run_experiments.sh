@@ -19,5 +19,5 @@ for i in 1 2 3 4 5 6 7 8 9 10; do
     rand_batch_size=${BATCH_SIZE[$[$RANDOM % ${#BATCH_SIZE[@]}]]}
     echo "Batch size" $rand_batch_size
 
-    bash train.sh $rand_att_act $rand_dropout $rand_batch_size $rand_lstm_units
+    bash ../argument_mining_tesis/train.sh $rand_att_act $rand_dropout $rand_batch_size $rand_lstm_units
 done

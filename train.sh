@@ -4,7 +4,7 @@
 DATE=$(date +%y-%m-%d-%H-%M)
 echo "******** Starting experiment $DATE"
 
-python -u Train_AM.py am_simplest glove \
+python -u ../argument_mining_tesis/Train_AM.py am_simplest glove \
     --experimentDate $DATE \
     --miniBatchSize $3 \
     --lstmSize $4 \
