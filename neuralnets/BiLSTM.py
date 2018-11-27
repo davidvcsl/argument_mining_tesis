@@ -470,6 +470,7 @@ class BiLSTM:
                         logging.info("Model", savePath, "already exists")
             else:
                 no_improvement_since += 1
+                logging.info("\nNo improvements since " + str(no_improvement_since) + "\n")
                 
 
             if self.resultsOut != None:
