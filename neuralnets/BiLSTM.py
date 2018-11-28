@@ -498,6 +498,10 @@ class BiLSTM:
                 fOut.write("\t".join(["test: ", str(self.best_scores['test']['O']), str(self.best_scores['test']['Premise']),
                                       str(self.best_scores['test']['Claim']), str(self.best_scores['test']['MajorClaim'])]))
                 fOut.close()
+                with open(output + '/summary.txt', 'w') as fOut:
+                    # Pass the file handle in as a lambda function to make it callable
+                    self.model.summary(print_fn=lambda x: fOut.write(x + '\n'))
+                fOut.close()
                 logging.info("%.2f sec for whole execution" % (final_time))
                 break
             
