@@ -343,7 +343,7 @@ class BiLSTM:
         if mean_attention_vector:
             a = Lambda(lambda x: K.mean(x, axis=1), name='dim_reduction')(a)
             a = RepeatVector(size)(a)
-            a = Permute((2, 1))(a)
+        a = Permute((2, 1))(a)
         output_attention_mul = multiply([inputs,a], name='attention_mul')
         merged_input = Masking(mask_value=0)(output_attention_mul)
         #asd = Multiply()([inputs, a])
