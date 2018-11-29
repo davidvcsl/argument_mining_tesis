@@ -3,7 +3,7 @@ ATTENTION_ACTIVATION=$2
 
 for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
     echo "******************* EXPLORING SETTING $i ***************************"
-    ATT_ACT=(relu softmax sigmoid)
+    ATT_ACT=(relu sigmoid sigmoid)
     rand_att_act=${ATT_ACT[$[$RANDOM % ${#ATT_ACT[@]}]]}
     echo "Attention activation function" $rand_att_act
 
@@ -15,7 +15,7 @@ for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
     rand_dropout=${DROPOUT[$[$RANDOM % ${#DROPOUT[@]}]]}
     echo "Dropout" $rand_dropout
 
-    BATCH_SIZE=(4 8 16 32 64 128 512)
+    BATCH_SIZE=(4 8 16 32 64 128)
     rand_batch_size=${BATCH_SIZE[$[$RANDOM % ${#BATCH_SIZE[@]}]]}
     echo "Batch size" $rand_batch_size
 
