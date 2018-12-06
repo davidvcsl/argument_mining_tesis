@@ -831,7 +831,7 @@ class NoAttention(BiLSTM):
         return pre, rec, f1, predLabels
 
     def buildModel(self):
-        logging.info("NOTENGOATENCION")
+        logging.info("No attention model")
         params = self.params
         embeddings = self.embeddings
 

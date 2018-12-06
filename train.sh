@@ -9,6 +9,7 @@ python -u ../argument_mining_tesis/Train_AM.py am_simplest glove \
     --miniBatchSize $3 \
     --lstmSize $4 \
     --dropout $2 \
-    --attentionActivation $1
+    --attentionActivation $1 \
+    --noAttention $5
 
 echo "********** Finished experiment"
