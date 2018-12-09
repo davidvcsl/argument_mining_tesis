@@ -50,12 +50,13 @@ class BiLSTM:
               'LSTM-Size': [100],
               'optimizer': 'adam',
               'earlyStopping': -1,
-              'clipvalue': 0,
+              'clipvalue': 0.5,
               'clipnorm': 1,
               'attentionActivation': "sigmoid",
               'noAttention': False,
               'experimentDate': 0,
-              'pad_sequences': False} #Default params
+              'attType': "word",
+              'padSequences': True} #Default params
 
 
     def __init__(self, devEqualTest=False, params=None):
@@ -88,13 +89,20 @@ class BiLSTM:
                         'test': {},
                         'dev': {}}
 
+    def calculateLargestSentence(self, sentences):
+        largest = 0
+        for idx in range(len(sentences)):
+            sentenceLength = len(sentences[idx]['tokens'])
+            largest = sentenceLength if sentenceLength > largest else largest
+        return largest
 
     def trainModel(self):
         #if self.pad_sequences:
             #_,_ = self.getPaddedSentences(dataset, labelKey)
             #padear aca y obtener los tamaños que van a ser el batch size y el tamaño de los inputs (secuencia mas larga, )
         if self.model == None:
-            self.buildModel() #pasar por parametro el batchsize y secuencia mas larga
+            largestSentence = self.calculateLargestSentence(self.dataset['trainMatrix'])
+            self.buildModel(largestSentence) #pasar por parametro el batchsize y secuencia mas larga
             
         trainMatrix = self.dataset['trainMatrix'] 
         self.epoch += 1
@@ -108,11 +116,12 @@ class BiLSTM:
         for batch in iterator: 
             labels = batch[0]
             nnInput = batch[1:]
-            self.model.train_on_batch(nnInput, labels)   
+            self.model.train_on_batch(nnInput, labels)
 
     def predictLabels(self, sentences):
         if self.model == None:
-            self.buildModel()
+            largestSentence = self.calculateLargestSentence(self.dataset['trainMatrix'])
+            self.buildModel(largestSentence)
             
         predLabels = [None]*len(sentences)
 
@@ -150,7 +159,8 @@ class BiLSTM:
 
     def predictPaddedLabels(self, sentences):
         if self.model == None:
-            self.buildModel()
+            largestSentence = self.calculateLargestSentence(self.dataset['trainMatrix'])
+            self.buildModel(largestSentence)
 
         sentencesNumber= len(sentences)
         att_scores = [None] * len(sentences)
@@ -330,8 +340,7 @@ class BiLSTM:
                 
             assert(numTrainExamples == sentenceCount) #Check that no sentence was missed 
 
-    def attention_3d_block(self, inputs, size, mean_attention_vector=False):
-
+    def feature_attention(self, inputs, size, mean_attention_vector=False):
         activation_funct = self.params['attentionActivation'] if (self.params['attentionActivation']) != None else "relu"
         logging.info("Activation Function: " + activation_funct)
         a = Permute((2, 1))(inputs)
@@ -349,13 +358,26 @@ class BiLSTM:
         #asd = Multiply()([inputs, a])
         return merged_input #output_attention_mul
 
-    def buildModel(self):
+    def word_attention(self, inputs, size, mean_attention_vector=False):
+        activation_funct = self.params['attentionActivation'] if (self.params['attentionActivation']) != None else "relu"
+        logging.info("Activation Function: " + activation_funct)
+        a = TimeDistributed(Dense(size, activation=activation_funct), name='attention_dense')(inputs)
+        if mean_attention_vector:
+            a = Lambda(lambda x: K.mean(x, axis=2), name='dim_reduction')(a)
+            a = RepeatVector(size)(a)
+        a = Permute((2, 1))(a)
+        output_attention_mul = multiply([inputs,a], name='attention_mul')
+        merged_input = Masking(mask_value=0)(output_attention_mul)
+        return merged_input
+
+
+    def buildModel(self, largestSentence):
         logging.info("After BiLSTM Attention")
         params = self.params
         embeddings = self.embeddings
 
         tokens = Sequential()
-        tokens.add(Embedding(input_length=557, input_dim=embeddings.shape[0], output_dim=embeddings.shape[1],  weights=[embeddings], mask_zero=False, trainable=False, name='token_emd')) #input_shape=(557,)
+        tokens.add(Embedding(input_length=largestSentence, input_dim=embeddings.shape[0], output_dim=embeddings.shape[1],  weights=[embeddings], mask_zero=False, trainable=False, name='token_emd')) #input_shape=(557,)
         layerIn = tokens.input
         layerOut = tokens.output
 
@@ -376,7 +398,12 @@ class BiLSTM:
             
             cnt += 1
 
-        attention_mul = self.attention_3d_block(lstmLayer, int(lstmLayer.shape[2]), True)
+        if params['attType'] == "feature":
+            logging.info("Using Feature Attention")
+            attention_mul = self.feature_attention(lstmLayer, int(lstmLayer.shape[2]), True)
+        else:
+            logging.info("Using Word Attention")
+            attention_mul = self.word_attention(lstmLayer, int(lstmLayer.shape[2]), True)
         #attention_mul = Flatten()(attention_mul)
 
         # Softmax Decoder
@@ -486,7 +513,7 @@ class BiLSTM:
                 final_time = time.time() - init_time
                 experiment_params = "batch_" + str(self.params['miniBatchSize']) + "_lstm_" + str(
                     self.params['LSTM-Size'][0]) + "_dropout_" + str(self.params['dropout'][0]) + '-' + str(
-                    self.params['dropout'][1]) + '_' + self.params['attentionActivation']
+                    self.params['dropout'][1]) + '_' + self.params['attentionActivation'] + '_' + self.params['attType']
                 output = 'tmp/' + str(self.params['experimentDate']) + '_' + experiment_params
                 outputName = output + '/' + str(epoch) + "_ExperimentTime_" + str(final_time) + "_EpochsTime_" + str(total_train_time)
                 fOut = open(outputName, 'w')
@@ -626,7 +653,9 @@ class BiLSTM:
         return pre, rec, f1, predLabels
     
     def writeOutputToFile(self, sentences, predLabels, att_scores, name):
-            experiment_params = "batch_" + str(self.params['miniBatchSize'])+ "_lstm_" + str(self.params['LSTM-Size'][0])+ "_dropout_" + str(self.params['dropout'][0])+ '-' + str(self.params['dropout'][1]) + '_' + self.params['attentionActivation']
+            experiment_params = "batch_" + str(self.params['miniBatchSize'])+ "_lstm_" + str(self.params['LSTM-Size'][0]) + \
+                                "_dropout_" + str(self.params['dropout'][0])+ '-' + str(self.params['dropout'][1]) + '_' + \
+                                self.params['attentionActivation'] + '_' + self.params['attType']
             output = 'tmp/'+ str(self.params['experimentDate']) + '_' + experiment_params
             if not os.path.isdir(output): os.mkdir(output)
             outputName = output + '/' + name
@@ -661,19 +690,24 @@ class BiLSTM:
 
 class BeforeBiLSTM(BiLSTM):
 
-    def buildModel(self):
+    def buildModel(self, largestSentence):
         logging.info("Before BiLSTM Attention")
         params = self.params
         embeddings = self.embeddings
 
         tokens = Sequential()
-        tokens.add(Embedding(input_length=557, input_dim=embeddings.shape[0], output_dim=embeddings.shape[1],
+        tokens.add(Embedding(input_length=largestSentence, input_dim=embeddings.shape[0], output_dim=embeddings.shape[1],
                              weights=[embeddings], mask_zero=False, trainable=False,
-                             name='token_emd'))  # input_shape=(557,)
+                             name='token_emd'))
         layerIn = tokens.input
         layerOut = tokens.output
 
-        attention_mul = self.attention_3d_block(layerOut, int(layerOut.shape[2]), True)
+        if params['attType'] == "feature":
+            logging.info("Using Feature Attention")
+            attention_mul = self.feature_attention(layerOut, int(layerOut.shape[2]), True)
+        else:
+            logging.info("Using Word Attention")
+            attention_mul = self.word_attention(layerOut, int(layerOut.shape[2]), True)
 
         # Add LSTMs
         cnt = 1
@@ -681,7 +715,7 @@ class BeforeBiLSTM(BiLSTM):
             if isinstance(params['dropout'], (list, tuple)):
                 lstmLayer = Bidirectional(LSTM(size, return_sequences=True, dropout=params['dropout'][0],
                                                recurrent_dropout=params['dropout'][1]), name="main_LSTM_" + str(cnt))(
-                    attention_mul)  # layerOut #attention_mul
+                    attention_mul)
 
             else:
                 """ Naive dropout """
@@ -692,11 +726,9 @@ class BeforeBiLSTM(BiLSTM):
 
             cnt += 1
 
-        # attention_mul = Flatten()(attention_mul)
-
         # Softmax Decoder
         activationLayer = TimeDistributed(Dense(len(self.dataset['mappings'][self.labelKey]), activation='softmax'),
-                                          name='softmax_output')(lstmLayer)  # attention_mul #lstmLayer
+                                          name='softmax_output')(lstmLayer)
         lossFct = 'sparse_categorical_crossentropy'
 
         optimizerParams = {}
@@ -732,7 +764,8 @@ class NoAttention(BiLSTM):
 
     def predictPaddedLabels(self, sentences):
         if self.model == None:
-            self.buildModel()
+            largestSentence = self.calculateLargestSentence(self.dataset['trainMatrix'])
+            self.buildModel(largestSentence)
 
         sentencesNumber= len(sentences)
         sentencesPaddedTokens, sentenceLabels = self.getPaddedSentences(sentences, self.labelKey)
@@ -830,13 +863,13 @@ class NoAttention(BiLSTM):
 
         return pre, rec, f1, predLabels
 
-    def buildModel(self):
+    def buildModel(self, largestSentence):
         logging.info("No attention model")
         params = self.params
         embeddings = self.embeddings
 
         tokens = Sequential()
-        tokens.add(Embedding(input_length=557, input_dim=embeddings.shape[0], output_dim=embeddings.shape[1],
+        tokens.add(Embedding(input_length=largestSentence, input_dim=embeddings.shape[0], output_dim=embeddings.shape[1],
                              weights=[embeddings], mask_zero=False, trainable=False,
                              name='token_emd'))
         layerIn = tokens.input
@@ -892,8 +925,12 @@ class NoAttention(BiLSTM):
             logging.debug(model.get_config())
             logging.debug("Optimizer: %s, %s" % (str(type(opt)), str(opt.get_config())))
 
-    def writeOutputToFile(self, sentences, predLabels , name):
-            experiment_params = "batch_" + str(self.params['miniBatchSize'])+ "_lstm_" + str(self.params['LSTM-Size'][0])+ "_dropout_" + str(self.params['dropout'][0])+ '-' + str(self.params['dropout'][1]) + "_NoAttention"
+    def writeOutputToFile(self, sentences, predLabels, name):
+            self.params['attentionActivation'] = "NoAttention"
+            self.params['attType'] = ''
+            experiment_params = "batch_" + str(self.params['miniBatchSize'])+ "_lstm_" + str(self.params['LSTM-Size'][0]) + \
+                                "_dropout_" + str(self.params['dropout'][0])+ '-' + str(self.params['dropout'][1]) + '_' + \
+                                self.params['attentionActivation'] + '_' + self.params['attType']
             output = 'tmp/'+ str(self.params['experimentDate']) + '_' + experiment_params
             if not os.path.isdir(output): os.mkdir(output)
             outputName = output + '/' + name

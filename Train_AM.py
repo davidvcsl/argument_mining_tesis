@@ -30,7 +30,7 @@ embeddingsPathOpt = {'levy':'levy_deps.words',
 op = OptionParser(usage='Usage: python Train_AM [dataset] [embedding] [opts]')
 op.add_option("--optimizer",
               dest="optimizer",
-              default="nadam",
+              default="adam",
               help="nadam / adam / rmsprop / adadelta / adagrad / sgd")
 op.add_option("--miniBatchSize",
               dest="miniBatchSize",
@@ -56,7 +56,13 @@ op.add_option("--beforeBiLSTM",
 op.add_option("--noAttention",
               dest="noAttention",
               default=False)
-
+op.add_option("--attType",
+              dest="attType",
+              default="word",
+              help="feature / word")
+op.add_option("--padSequences",
+              dest="padSequences",
+              default=True)
 op.add_option("--eval",
               dest="evalTest",
               default=True,
@@ -91,7 +97,8 @@ params = {'dropout': [float(opts.dropout), float(opts.dropout)], #Parametrizar s
           'experimentDate': opts.experimentDate,
           'beforeBiLSTM': opts.beforeBiLSTM,
           'noAttention': opts.noAttention,
-          'pad_sequences': True}
+          'attType': opts.attType,
+          'padSequences': opts.padSequences}
 
 
 frequencyThresholdUnknownTokens = 50 #If a token that is not in the pre-trained embeddings file appears at least 50 times in the train.txt, then a new embedding is generated for this word

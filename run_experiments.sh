@@ -3,7 +3,7 @@ ATTENTION_ACTIVATION=$2
 
 for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
     echo "******************* EXPLORING SETTING $i ***************************"
-    ATT_ACT=(relu sigmoid sigmoid)
+    ATT_ACT=(relu sigmoid linear tanh)
     rand_att_act=${ATT_ACT[$[$RANDOM % ${#ATT_ACT[@]}]]}
     echo "Attention activation function" $rand_att_act
 
@@ -19,8 +19,8 @@ for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
     rand_batch_size=${BATCH_SIZE[$[$RANDOM % ${#BATCH_SIZE[@]}]]}
     echo "Batch size" $rand_batch_size
 
-    no_attention="True"
-    echo "No Attention" $no_attention
+    att_type="True"
+    echo "Attention Type" $att_type
 
-    bash ../argument_mining_tesis/train.sh $rand_att_act $rand_dropout $rand_batch_size $rand_lstm_units $no_attention
+    bash ../argument_mining_tesis/train.sh $rand_att_act $rand_dropout $rand_batch_size $rand_lstm_units $att_type
 done
