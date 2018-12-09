@@ -402,7 +402,7 @@ class BiLSTM:
             logging.info("Using Feature Attention")
             attention_mul = self.feature_attention(lstmLayer, int(lstmLayer.shape[2]), True)
         else:
-            logging.info("Using Word Attention")
+            logging.info("Using " + params['attType'] + " Attention")
             attention_mul = self.word_attention(lstmLayer, int(lstmLayer.shape[2]), True)
         #attention_mul = Flatten()(attention_mul)
 

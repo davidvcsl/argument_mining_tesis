@@ -19,7 +19,7 @@ for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
     rand_batch_size=${BATCH_SIZE[$[$RANDOM % ${#BATCH_SIZE[@]}]]}
     echo "Batch size" $rand_batch_size
 
-    att_type="True"
+    att_type="word"
     echo "Attention Type" $att_type
 
     bash ../argument_mining_tesis/train.sh $rand_att_act $rand_dropout $rand_batch_size $rand_lstm_units $att_type
